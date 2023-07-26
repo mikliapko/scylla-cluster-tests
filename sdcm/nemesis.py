@@ -2614,12 +2614,28 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
             mgr_task.stop()
             assert False, f'Backup task {mgr_task.id} timed out - while on status {status}'
 
+    def disrupt_mgmt_repair_cli(self, ):
+        if not self.cluster.params.get('use_mgmt') and not self.cluster.params.get('use_cloud_manager'):
+            raise UnsupportedNemesis('Scylla-manager configuration is not defined!')
+        if self.cluster.scylla_manager_tool.feature("repair", "single-host-parallelism"):
+            self.log.info('single-host-parallelism is supported running repair with single-host-parallelism=1')
+            self.disrupt_mgmt_repair_cli_no_parallelism()
+        else:
+            self.disrupt_mgmt_repair_cli_normal()
+
     @latency_calculator_decorator(legend="Scylla-Manger repair")
-    def disrupt_mgmt_repair_cli(self):
+    def disrupt_mgmt_repair_cli_no_parallelism(self):
+        self.disrupt_mgmt_repair_cli_general(host_parallelism=1)
+
+    @latency_calculator_decorator(legend="Scylla-Manger repair")
+    def disrupt_mgmt_repair_cli_normal(self):
+        self.disrupt_mgmt_repair_cli_general()
+
+    def disrupt_mgmt_repair_cli_general(self, host_parallelism: int = None):
         if not self.cluster.params.get('use_mgmt') and not self.cluster.params.get('use_cloud_manager'):
             raise UnsupportedNemesis('Scylla-manager configuration is not defined!')
         mgr_cluster = self.cluster.get_cluster_manager()
-        mgr_task = mgr_cluster.create_repair_task()
+        mgr_task = mgr_cluster.create_repair_task(host_parallelism=host_parallelism)
         task_final_status = mgr_task.wait_and_get_final_status(timeout=86400)  # timeout is 24 hours
         assert task_final_status == TaskStatus.DONE, 'Task: {} final status is: {}.'.format(
             mgr_task.id, str(mgr_task.status))
