@@ -336,9 +336,13 @@ class ClusterTester(db_stats.TestStatsMixin, unittest.TestCase):  # pylint: disa
         self.test_config.set_duration(self._duration)
         cluster_backend = self.params.get('cluster_backend')
         if cluster_backend in ('aws', 'k8s-eks'):
-            self.test_config.set_multi_region(len(self.params.region_names) > 1)
+            self.test_config.set_multi_region(
+                (self.params.get("simulated_regions") or 0) > 1 or len(self.params.region_names) > 1)
         elif cluster_backend in ('gce', 'k8s-gke'):
-            self.test_config.set_multi_region(len(self.params.gce_datacenters) > 1)
+            self.test_config.set_multi_region(
+                (self.params.get("simulated_regions") or 0) > 1 or len(self.params.gce_datacenters) > 1)
+        elif cluster_backend == "azure":
+            self.test_config.set_multi_region((self.params.get("simulated_regions") or 0) > 1)
 
         if self.params.get("backup_bucket_backend") == "azure":
             self.test_config.set_backup_azure_blob_credentials()
@@ -1066,7 +1070,13 @@ class ClusterTester(db_stats.TestStatsMixin, unittest.TestCase):  # pylint: disa
     def get_cluster_gce(self, loader_info, db_info, monitor_info):
         # pylint: disable=too-many-locals,too-many-statements,too-many-branches
         if loader_info['n_nodes'] is None:
-            loader_info['n_nodes'] = int(self.params.get('n_loaders'))
+            n_loader_nodes = self.params.get('n_loaders')
+            if isinstance(n_loader_nodes, int):
+                loader_info['n_nodes'] = [n_loader_nodes]
+            elif isinstance(n_loader_nodes, str):
+                loader_info['n_nodes'] = [int(n) for n in n_loader_nodes.split()]
+            else:
+                self.fail('Unsupported parameter type: {}'.format(type(n_loader_nodes)))
         if loader_info['type'] is None:
             loader_info['type'] = self.params.get('gce_instance_type_loader')
         if loader_info['disk_type'] is None:
@@ -1213,7 +1223,7 @@ class ClusterTester(db_stats.TestStatsMixin, unittest.TestCase):  # pylint: disa
             credentials=self.credentials,
             user_prefix=user_prefix,
             params=self.params,
-            region_names=None,
+            region_names=regions,
         )
         self.db_cluster = ScyllaAzureCluster(image_id=azure_image,
                                              root_disk_size=db_info['disk_size'],

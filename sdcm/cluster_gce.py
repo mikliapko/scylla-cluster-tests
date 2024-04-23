@@ -74,6 +74,7 @@ class GCENode(cluster.BaseNode):
                  gce_image_username: str = 'root',
                  base_logdir: str = None,
                  dc_idx: int = 0,
+                 rack: int = 0,
                  gce_project: str = None):
         name = f"{node_prefix}-{dc_idx}-{node_index}".lower()
         self.node_index = node_index
@@ -91,7 +92,8 @@ class GCENode(cluster.BaseNode):
                          ssh_login_info=ssh_login_info,
                          base_logdir=base_logdir,
                          node_prefix=node_prefix,
-                         dc_idx=dc_idx)
+                         dc_idx=dc_idx,
+                         rack=rack)
 
     def refresh_network_interfaces_info(self):
         pass
@@ -145,7 +147,7 @@ class GCENode(cluster.BaseNode):
         pass
 
     @property
-    def region(self):
+    def vm_region(self):
         return self._instance.zone.split('/')[-1][:-2]
 
     @property
@@ -483,7 +485,7 @@ class GCECluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
         instances = sorted(instances, key=sort_by_index)
         return instances
 
-    def _create_node(self, instance, node_index, dc_idx):
+    def _create_node(self, instance, node_index, dc_idx, rack):
         try:
             node = GCENode(gce_instance=instance,
                            gce_service=self._gce_service,
@@ -494,7 +496,8 @@ class GCECluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
                            node_prefix=self.node_prefix,
                            node_index=node_index,
                            base_logdir=self.logdir,
-                           dc_idx=dc_idx)
+                           dc_idx=dc_idx,
+                           rack=rack)
             node.init()
             return node
         except Exception as ex:
@@ -506,18 +509,22 @@ class GCECluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
             return []
         self.log.info("Adding nodes to cluster")
         nodes = []
+        instance_dc = 0 if self.params.get("simulated_regions") else dc_idx
         if self.test_config.REUSE_CLUSTER:
-            instances = self._get_instances(dc_idx)
+            instances = self._get_instances(instance_dc)
             if not instances:
                 raise RuntimeError("No nodes found for testId %s " % (self.test_config.test_id(),))
         else:
-            instances = self._create_instances(count, dc_idx, enable_auto_bootstrap, instance_type=instance_type)
+            instances = self._create_instances(
+                count, instance_dc, enable_auto_bootstrap, instance_type=instance_type)
 
         self.log.debug('instances: %s', instances)
         if instances:
             self.log.debug('GCE instance extra info: %s', instances[0])
         for node_index, instance in enumerate(instances, start=self._node_index + 1):
-            node = self._create_node(instance, node_index, dc_idx)
+            # in case rack is not specified, spread nodes to different racks
+            node_rack = node_index % self.racks_count if rack is None else rack
+            node = self._create_node(instance, node_index, dc_idx, rack=node_rack)
             nodes.append(node)
             self.nodes.append(node)
             self.log.info("Added node: %s", node.name)

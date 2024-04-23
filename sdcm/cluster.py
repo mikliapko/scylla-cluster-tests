@@ -442,8 +442,14 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
                                                remote_port=LDAP_SSH_TUNNEL_LOCAL_PORT)
 
     @property
-    def region(self):
+    def vm_region(self):
         raise NotImplementedError()
+
+    @property
+    def region(self):
+        if (self.parent_cluster.params.get('simulated_regions') or 0) > 1:
+            return f"{self.vm_region}-s{self.dc_idx + 1}"
+        return self.vm_region
 
     @property
     def host_id(self):
@@ -491,7 +497,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
                 install_encryption_at_rest_files(self.remoter)
             for kms_host_name, kms_host_data in append_scylla_yaml.get("kms_hosts", {}).items():
                 if kms_host_data["aws_region"] == "auto":
-                    append_scylla_yaml["kms_hosts"][kms_host_name]["aws_region"] = self.region
+                    append_scylla_yaml["kms_hosts"][kms_host_name]["aws_region"] = self.vm_region
             scylla_yml.update(append_scylla_yaml)
 
         return scylla_yml
@@ -1333,10 +1339,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         mark_exists = self.remoter.run('test -e %s' % mark_path, ignore_status=True, verbose=verbose).ok
         if self.uuid and not mark_exists:
             self.remoter.run(cmd % self.uuid, ignore_status=True)
-            if self.is_docker():
-                self.remoter.sudo('touch %s' % mark_path, verbose=verbose)
-            else:
-                self.remoter.sudo('touch %s' % mark_path, verbose=verbose, user='scylla')
+            self.remoter.sudo('touch %s' % mark_path, verbose=verbose, user='scylla')
 
     def wait_db_up(self, verbose=True, timeout=3600):
         text = None
@@ -4578,8 +4581,14 @@ class BaseScyllaCluster:  # pylint: disable=too-many-public-methods, too-many-in
         if self.test_config.BACKTRACE_DECODING:
             node.install_scylla_debuginfo()
 
-        if self.test_config.MULTI_REGION or self.params.get('simulated_racks') > 1:
-            SnitchConfig(node=node, datacenters=self.datacenter).apply()  # pylint: disable=no-member
+        simulated_regions_num = self.params.get('simulated_regions')
+        if self.test_config.MULTI_REGION or simulated_regions_num > 1 or self.params.get('simulated_racks') > 1:
+            if simulated_regions_num > 1:
+                datacenters = [
+                    f"{self.datacenter[0]}-s{i}" for i in range(1, simulated_regions_num + 1)]  # pylint: disable=no-member
+            else:
+                datacenters = self.datacenter  # pylint: disable=no-member
+            SnitchConfig(node=node, datacenters=datacenters).apply()
         node.config_setup(append_scylla_args=self.get_scylla_args())
 
         self._scylla_post_install(node, install_scylla, nic_devname)
@@ -4634,12 +4643,13 @@ class BaseScyllaCluster:  # pylint: disable=too-many-public-methods, too-many-in
 
     def node_startup(self, node: BaseNode, verbose: bool = False, timeout: int = 3600):
         if not self.test_config.REUSE_CLUSTER:
-            self.log.debug('io.conf before reboot: %s', node.remoter.sudo('cat /etc/scylla.d/io.conf').stdout)
+            self.log.debug('io.conf before reboot: %s', node.remoter.sudo(
+                f'cat {node.add_install_prefix("/etc/scylla.d/io.conf")}').stdout)
             node.start_scylla_server(verify_up=False)
             if self.params.get("jmx_heap_memory"):
                 node.restart_scylla_jmx()
             self.log.debug(
-                'io.conf right after reboot: %s', node.remoter.sudo('cat /etc/scylla.d/io.conf').stdout)
+                'io.conf right after reboot: %s', node.remoter.sudo(f'cat {node.add_install_prefix("/etc/scylla.d/io.conf")}').stdout)
             if self.params.get('use_mgmt'):
                 node.remoter.sudo(shell_script_cmd("""\
                     systemctl restart scylla-manager-agent
@@ -5799,6 +5809,10 @@ class LocalNode(BaseNode):
 
     def _refresh_instance_state(self):
         return ['127.0.0.1'], ['127.0.0.1']
+
+    @property
+    def vm_region(self):
+        return "local"
 
     @property
     def region(self):
