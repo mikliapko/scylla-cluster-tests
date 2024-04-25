@@ -551,7 +551,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         hard_timeout = 50 * 60
 
         location = self.locations[0]
-        datacenters = [node.datacenter for node in self.db_cluster.nodes]
+        datacenters = set(node.datacenter for node in self.db_cluster.nodes)
         location_list = [f"{dc}:{location}" for dc in datacenters]
 
         with adaptive_timeout(Operations.MGMT_REPAIR, self.db_cluster.nodes[0], timeout=soft_timeout):
