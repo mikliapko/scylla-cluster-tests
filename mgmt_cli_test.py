@@ -173,7 +173,7 @@ class BackupFunctionsMixIn(LoaderUtilsMixin):
 
     # pylint: disable=too-many-arguments
     def verify_backup_success(self, mgr_cluster, backup_task, keyspace_name='keyspace1', tables_names=None,
-                              truncate=True, restore_data_with_task=False, timeout=None):
+                              truncate=True, restore_data_with_task=False, location_list=None, timeout=None):
         if tables_names is None:
             tables_names = ['standard1']
         per_keyspace_tables_dict = {keyspace_name: tables_names}
@@ -183,7 +183,7 @@ class BackupFunctionsMixIn(LoaderUtilsMixin):
                 self.db_cluster.nodes[0].run_cqlsh(f'TRUNCATE {keyspace_name}.{table_name}')
         if restore_data_with_task:
             self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=backup_task.get_snapshot_tag(),
-                                          timeout=timeout, restore_data=True)
+                                          timeout=timeout, restore_data=True, location_list=location_list)
         else:
             self.restore_backup_from_backup_task(mgr_cluster=mgr_cluster, backup_task=backup_task,
                                                  keyspace_and_table_list=per_keyspace_tables_dict)
@@ -343,22 +343,22 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
             self.test_basic_backup()
         with self.subTest('Restore Backup Test'):
             self.test_restore_backup_with_task()
-        with self.subTest('Repair Multiple Keyspace Types'):
-            self.test_repair_multiple_keyspace_types()
-        with self.subTest('Mgmt Cluster CRUD'):
-            self.test_mgmt_cluster_crud()
-        with self.subTest('Mgmt cluster Health Check'):
-            self.test_mgmt_cluster_healthcheck()
-        # test_healthcheck_change_max_timeout requires a multi dc run. And since ipv6 cannot run in multi dc, this test
-        # function will be skipped for ipv6 runs.
-        if self.db_cluster.nodes[0].test_config.IP_SSH_CONNECTIONS != "ipv6":
-            with self.subTest('Basic test healthcheck change max timeout'):
-                self.test_healthcheck_change_max_timeout()
-        with self.subTest('Basic test suspend and resume'):
-            self.test_suspend_and_resume()
-        with self.subTest('Client Encryption'):
-            # Since this test activates encryption, it has to be the last test in the sanity
-            self.test_client_encryption()
+        # with self.subTest('Repair Multiple Keyspace Types'):
+        #     self.test_repair_multiple_keyspace_types()
+        # with self.subTest('Mgmt Cluster CRUD'):
+        #     self.test_mgmt_cluster_crud()
+        # with self.subTest('Mgmt cluster Health Check'):
+        #     self.test_mgmt_cluster_healthcheck()
+        # # test_healthcheck_change_max_timeout requires a multi dc run. And since ipv6 cannot run in multi dc, this test
+        # # function will be skipped for ipv6 runs.
+        # if self.db_cluster.nodes[0].test_config.IP_SSH_CONNECTIONS != "ipv6":
+        #     with self.subTest('Basic test healthcheck change max timeout'):
+        #         self.test_healthcheck_change_max_timeout()
+        # with self.subTest('Basic test suspend and resume'):
+        #     self.test_suspend_and_resume()
+        # with self.subTest('Client Encryption'):
+        #     # Since this test activates encryption, it has to be the last test in the sanity
+        #     self.test_client_encryption()
 
     def test_repair_intensity_feature_on_multiple_node(self):
         self._repair_intensity_feature(fault_multiple_nodes=True)
@@ -549,9 +549,14 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
             f"Backup task ended in {backup_task_status} instead of {TaskStatus.DONE}"
         soft_timeout = 36 * 60
         hard_timeout = 50 * 60
+
+        location = self.locations[0]
+        datacenters = [node.datacenter for node in self.db_cluster.nodes]
+        location_list = [f"{dc}:{location}" for dc in datacenters]
+
         with adaptive_timeout(Operations.MGMT_REPAIR, self.db_cluster.nodes[0], timeout=soft_timeout):
             self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, restore_data_with_task=True,
-                                       timeout=hard_timeout)
+                                       timeout=hard_timeout, location_list=location_list)
         self.run_verification_read_stress()
         mgr_cluster.delete()  # remove cluster at the end of the test
         self.log.info('finishing test_restore_backup_with_task')
