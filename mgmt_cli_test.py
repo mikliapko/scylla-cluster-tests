@@ -553,7 +553,8 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         # location = self.locations[0]
         # datacenters = set(node.datacenter for node in self.db_cluster.nodes)
         # location_list = [f"{dc}:{location}" for dc in datacenters]
-        location_list = ["us-eastscylla_node_east:s3:manager-backup-tests-us-east-1"]
+
+        location_list = ["us-west-2scylla_node_west:s3:manager-backup-tests-us-east-1"]
 
         with adaptive_timeout(Operations.MGMT_REPAIR, self.db_cluster.nodes[0], timeout=soft_timeout):
             self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, restore_data_with_task=True,
