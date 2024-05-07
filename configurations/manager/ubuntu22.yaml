@@ -1,2 +1,2 @@
-ami_id_monitor: 'ami-09db26f1ef0a9f406'  # Canonical, Ubuntu, 22.04 LTS, amd64 jammy image build on 2022-05-06
+ami_id_monitor: 'scylladb-monitor-4-6-2-2024-02-13t08-06-04z'
 ami_monitor_user: 'ubuntu'
