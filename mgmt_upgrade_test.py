@@ -314,7 +314,7 @@ def upgrade_scylla_manager(
         manager_node.remoter.sudo('supervisorctl start scylla-manager')
     else:
         manager_node.remoter.sudo("systemctl start scylla-manager")
-    time_to_sleep = 30
+    time_to_sleep = 180
     LOGGER.debug("Sleep %s seconds, waiting for manager service ready to respond", time_to_sleep)
     sleep(time_to_sleep)
 

@@ -2324,6 +2324,14 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
             manager_yaml["tls_key_file"] = tls_key_file
             manager_yaml["prometheus"] = f":{self.parent_cluster.params.get('manager_prometheus_port')}"
 
+            # TODO: remove this restriction to update_frequency configuration after manager-3.3 release
+            # `config_cache` parameter was introduced in version 3.2.7-0.20240509, skip this for older versions.
+            version = self.remoter.run(
+                "sctool version | grep 'Server version:' | awk -F': ' '{print $2}'").stdout.strip()
+            # example of version returned - 3.2.3~0.20231019.5b0db89a
+            if packaging.version.parse(version) >= packaging.version.parse("3.2.7-0.20240509"):
+                manager_yaml["config_cache"] = {"update_frequency": "1m"}
+
         if self.is_docker():
             self.remoter.sudo("supervisorctl restart scylla-manager")
             res = self.remoter.sudo("supervisorctl status scylla-manager")
