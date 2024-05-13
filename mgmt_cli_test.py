@@ -703,7 +703,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
             client_encrypt=True,
             force_non_ssl_session_port=mgr_cluster.sctool.is_minimum_3_2_6_or_snapshot
         )
-        time.sleep(240)
+        time.sleep(90)
 
         healthcheck_task.wait_for_status(list_status=[TaskStatus.DONE], step=5, timeout=240)
         sleep = 40
