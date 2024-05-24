@@ -61,6 +61,7 @@ from sdcm.utils.gce_utils import get_gce_image_tags
 from sdcm.remote import LOCALRUNNER, shell_script_cmd
 from sdcm.test_config import TestConfig
 from sdcm.kafka.kafka_config import SctKafkaConfiguration
+from sdcm.mgmt.common import RestoreParameters, AgentBackupParameters
 
 
 def _str(value: str) -> str:
@@ -1091,6 +1092,12 @@ class SCTConfiguration(dict):
         dict(name="scylla_mgmt_upgrade_to_repo", env="SCT_SCYLLA_MGMT_UPGRADE_TO_REPO", type=str,
              help="Url to the repo of scylla manager version to upgrade to for management tests"),
 
+        dict(name="mgmt_restore_params", env="SCT_MGMT_RESTORE_PARAMS", type=dict_or_str,
+             help="Manager restore operation specific parameters: batch_size, parallel"),
+
+        dict(name="mgmt_agent_backup_config", env="SCT_MGMT_AGENT_BACKUP_CONFIG", type=dict_or_str,
+             help="Manager agent backup general configuration: checkers, transfers, low_level_retries"),
+
         # PerformanceRegressionTest
 
         dict(name="stress_cmd_w", env="SCT_STRESS_CMD_W",
@@ -1966,6 +1973,14 @@ class SCTConfiguration(dict):
         if kafka_connectors := self.get('kafka_connectors'):
             self['kafka_connectors'] = [SctKafkaConfiguration(**connector)
                                         for connector in kafka_connectors]
+
+        # 20 Validate Manager restore parameters
+        if restore_params := self.get("mgmt_restore_params"):
+            self["mgmt_restore_params"] = RestoreParameters(**restore_params)
+
+        # 21 Validate Manager agent backup general parameters
+        if backup_params := self.get("mgmt_agent_backup_config"):
+            self["mgmt_agent_backup_config"] = AgentBackupParameters(**backup_params)
 
     def log_config(self):
         self.log.info(self.dump_config())

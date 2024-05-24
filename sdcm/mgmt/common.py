@@ -2,6 +2,9 @@ from enum import Enum
 import logging
 import datetime
 import yaml
+from typing import Optional
+
+from pydantic import BaseModel, Extra
 
 from sdcm.utils.distro import Distro
 
@@ -181,3 +184,20 @@ class TaskStatus:  # pylint: disable=too-few-public-methods
     @classmethod
     def all_statuses(cls):
         return set(getattr(cls, name) for name in dir(cls) if name.isupper())
+
+
+class RestoreParameters(BaseModel):
+    batch_size: Optional[str]
+    parallel: Optional[str]
+
+    class Config:
+        extra = Extra.forbid
+
+
+class AgentBackupParameters(BaseModel):
+    checkers: Optional[str]
+    transfers: Optional[str]
+    low_level_retries: Optional[str]
+
+    class Config:
+        extra = Extra.forbid
