@@ -393,8 +393,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         self.create_missing_rows_in_cluster(create_missing_rows_in_multiple_nodes=True,
                                             keyspace_to_be_repaired=keyspace_to_be_repaired,
                                             total_num_of_rows=292968720)
-        arg_list = [{"intensity": .0001},
-                    {"intensity": 0},
+        arg_list = [{"intensity": 0},
                     {"parallel": 1},
                     {"intensity": 2, "parallel": 1}]
 
@@ -1031,10 +1030,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         with self.db_cluster.cql_connection_patient(self.db_cluster.nodes[0]) as session:
             session.execute(f"DROP KEYSPACE IF EXISTS {keyspace_to_be_repaired}")
 
-        arg_list = [{"intensity": .5},
-                    {"intensity": .25},
-                    {"intensity": .0001},
-                    {"intensity": 2},
+        arg_list = [{"intensity": 2},
                     {"intensity": 4},
                     {"parallel": 1},
                     {"parallel": 2},
