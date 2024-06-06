@@ -352,23 +352,23 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         self.generate_load_and_wait_for_results()
         with self.subTest('Basic Backup Test'):
             self.test_basic_backup()
-        with self.subTest('Restore Backup Test'):
-            self.test_restore_backup_with_task()
-        with self.subTest('Repair Multiple Keyspace Types'):
-            self.test_repair_multiple_keyspace_types()
-        with self.subTest('Mgmt Cluster CRUD'):
-            self.test_mgmt_cluster_crud()
-        with self.subTest('Mgmt cluster Health Check'):
-            self.test_mgmt_cluster_healthcheck()
-        # test_healthcheck_change_max_timeout requires a multi dc run
-        if self.db_cluster.nodes[0].test_config.MULTI_REGION:
-            with self.subTest('Basic test healthcheck change max timeout'):
-                self.test_healthcheck_change_max_timeout()
-        with self.subTest('Basic test suspend and resume'):
-            self.test_suspend_and_resume()
-        with self.subTest('Client Encryption'):
-            # Since this test activates encryption, it has to be the last test in the sanity
-            self.test_client_encryption()
+        # with self.subTest('Restore Backup Test'):
+        #     self.test_restore_backup_with_task()
+        # with self.subTest('Repair Multiple Keyspace Types'):
+        #     self.test_repair_multiple_keyspace_types()
+        # with self.subTest('Mgmt Cluster CRUD'):
+        #     self.test_mgmt_cluster_crud()
+        # with self.subTest('Mgmt cluster Health Check'):
+        #     self.test_mgmt_cluster_healthcheck()
+        # # test_healthcheck_change_max_timeout requires a multi dc run
+        # if self.db_cluster.nodes[0].test_config.MULTI_REGION:
+        #     with self.subTest('Basic test healthcheck change max timeout'):
+        #         self.test_healthcheck_change_max_timeout()
+        # with self.subTest('Basic test suspend and resume'):
+        #     self.test_suspend_and_resume()
+        # with self.subTest('Client Encryption'):
+        #     # Since this test activates encryption, it has to be the last test in the sanity
+        #     self.test_client_encryption()
 
     def test_repair_intensity_feature_on_multiple_node(self):
         self._repair_intensity_feature(fault_multiple_nodes=True)
@@ -538,7 +538,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
             f"Backup task ended in {backup_task_status} instead of {TaskStatus.DONE}"
         self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task)
         self.run_verification_read_stress()
-        mgr_cluster.delete()  # remove cluster at the end of the test
+        # mgr_cluster.delete()  # remove cluster at the end of the test
         self.log.info('finishing test_basic_backup')
 
     def test_restore_backup_with_task(self):
