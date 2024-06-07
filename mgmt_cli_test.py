@@ -989,6 +989,8 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
             self.log.info("inserting {} rows to every node except {}".format(num_of_rows_per_insertion, node.name))
             end_of_range = start_of_range + num_of_rows_per_insertion - 1
             node.stop_scylla_server(verify_up=False, verify_down=True)
+            tablets_config = '{\'enabled\': true, \'initial\': 8192}'
+            self.create_keyspace(keyspace_name=keyspace_name, replication_factor=3, tablets_config=tablets_config)
             stress_thread = self.run_stress_thread(stress_cmd=stress_command_template.format(num_of_rows_per_insertion,
                                                                                              keyspace_name,
                                                                                              start_of_range,
