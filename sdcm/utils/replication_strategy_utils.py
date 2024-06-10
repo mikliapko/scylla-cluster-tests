@@ -2,7 +2,8 @@ import ast
 import re
 
 from contextlib import ContextDecorator
-from typing import Callable, Dict
+from dataclasses import dataclass
+from typing import Callable, Dict, Optional
 
 from sdcm.cluster import BaseNode
 from sdcm.utils.cql_utils import cql_quote_if_needed
@@ -95,3 +96,17 @@ class temporary_replication_strategy_setter(ContextDecorator):  # pylint: disabl
         for keyspace, strategy in keyspaces.items():
             self._preserve_replication_strategy(keyspace)
             strategy.apply(self.node, keyspace)
+
+
+@dataclass
+class TabletsConfiguration:
+    enabled: Optional[bool] = None
+    initial: Optional[int] = None
+
+    def __str__(self):
+        items = []
+        for key, value in self.__dict__.items():
+            if value is not None:
+                value = str(value).lower() if isinstance(value, bool) else value
+                items.append(f"'{key}': {value}")
+        return '{' + ', '.join(items) + '}'
