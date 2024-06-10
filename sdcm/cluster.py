@@ -2787,6 +2787,13 @@ class BaseNode(AutoSshContainerMixin):  # pylint: disable=too-many-instance-attr
             return ComparableScyllaVersion(self.scylla_version) > '2022.3.0~dev'
         return ComparableScyllaVersion(self.scylla_version) > '5.2.0~dev'
 
+    @property
+    def is_cluster_have_system_auth_ks(self):
+        if self.is_enterprise:
+            return ComparableScyllaVersion(self.scylla_version) <= '2024.1'
+        else:
+            return ComparableScyllaVersion(self.scylla_version) < '6.0'
+
     def _gen_cqlsh_cmd(self, command, keyspace, timeout, connect_timeout):
         """cqlsh [options] [host [port]]"""
         credentials = self.parent_cluster.get_db_auth()
