@@ -869,7 +869,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         self.log.debug("sctool version is : {}".format(manager_tool.sctool.version))
 
         expected_keyspaces_to_be_repaired = ["system_distributed", self.NETWORKSTRATEGY_KEYSPACE_NAME]
-        if self.db_cluster.nodes[0].is_cluster_have_system_auth_ks():
+        if not self.db_cluster.nodes[0].raft.is_consistent_topology_changes_enabled:
             expected_keyspaces_to_be_repaired.append("system_auth")
         per_keyspace_progress = repair_task.per_keyspace_progress
         self.log.info("Looking in the repair output for all of the required keyspaces")
