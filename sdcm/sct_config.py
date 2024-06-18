@@ -146,6 +146,21 @@ def dict_or_str(value):
     raise ValueError('"{}" isn\'t a dict'.format(value))
 
 
+def dict_or_str_or_pydantic(value):
+    if isinstance(value, str):
+        try:
+            return ast.literal_eval(value)
+        except Exception:  # pylint: disable=broad-except  # noqa: BLE001
+            pass
+    if isinstance(value, dict):
+        return value
+    from pydantic import BaseModel
+    if isinstance(value, BaseModel):
+        return value
+
+    raise ValueError('"{}" isn\'t a dict, str or Pydantic model'.format(value))
+
+
 def boolean(value):
     if isinstance(value, bool):
         return value
@@ -1092,10 +1107,10 @@ class SCTConfiguration(dict):
         dict(name="scylla_mgmt_upgrade_to_repo", env="SCT_SCYLLA_MGMT_UPGRADE_TO_REPO", type=str,
              help="Url to the repo of scylla manager version to upgrade to for management tests"),
 
-        dict(name="mgmt_restore_params", env="SCT_MGMT_RESTORE_PARAMS", type=dict_or_str,
+        dict(name="mgmt_restore_params", env="SCT_MGMT_RESTORE_PARAMS", type=dict_or_str_or_pydantic,
              help="Manager restore operation specific parameters: batch_size, parallel"),
 
-        dict(name="mgmt_agent_backup_config", env="SCT_MGMT_AGENT_BACKUP_CONFIG", type=dict_or_str,
+        dict(name="mgmt_agent_backup_config", env="SCT_MGMT_AGENT_BACKUP_CONFIG", type=dict_or_str_or_pydantic,
              help="Manager agent backup general configuration: checkers, transfers, low_level_retries"),
 
         # PerformanceRegressionTest
@@ -2511,6 +2526,10 @@ class SCTConfiguration(dict):
         if kafka_connectors := self.get('kafka_connectors'):
             out['kafka_connectors'] = [connector.dict(by_alias=True, exclude_none=True)
                                        for connector in kafka_connectors]
+        if mgmt_restore_params := self.get("mgmt_restore_params"):
+            out["mgmt_restore_params"] = mgmt_restore_params.dict(by_alias=True, exclude_none=True)
+        if mgmt_agent_backup_config := self.get("mgmt_agent_backup_config"):
+            out["mgmt_agent_backup_config"] = mgmt_agent_backup_config.dict(by_alias=True, exclude_none=True)
         return out
 
     def dump_config(self):

@@ -187,17 +187,17 @@ class TaskStatus:  # pylint: disable=too-few-public-methods
 
 
 class RestoreParameters(BaseModel):
-    batch_size: Optional[str]
-    parallel: Optional[str]
+    batch_size: Optional[int]
+    parallel: Optional[int]
 
     class Config:
         extra = Extra.forbid
 
 
 class AgentBackupParameters(BaseModel):
-    checkers: Optional[str]
-    transfers: Optional[str]
-    low_level_retries: Optional[str]
+    checkers: Optional[int]
+    transfers: Optional[int]
+    low_level_retries: Optional[int]
 
     class Config:
         extra = Extra.forbid
