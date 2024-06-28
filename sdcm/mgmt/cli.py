@@ -922,6 +922,7 @@ class ScyllaManagerTool(ScyllaManagerBase):
         self._initial_wait(20)
         LOGGER.info("Initiating Scylla-Manager, version: {}".format(self.sctool.version))
         list_supported_distros = [Distro.CENTOS7,
+                                  Distro.RHEL8, Distro.RHEL9,
                                   Distro.ROCKY8, Distro.ROCKY9,
                                   Distro.DEBIAN10, Distro.DEBIAN11,
                                   Distro.UBUNTU20, Distro.UBUNTU22]
