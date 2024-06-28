@@ -182,11 +182,11 @@ class BackupFunctionsMixIn(LoaderUtilsMixin):
     # pylint: disable=too-many-arguments
     def verify_backup_success(self, mgr_cluster, backup_task, ks_names: list = None, tables_names: list = None,
                               truncate=True, restore_data_with_task=False, timeout=None):
-        if ks_names is None:
-            ks_names = ['keyspace1']
-        if tables_names is None:
-            tables_names = ['standard1']
-        ks_tables_map = {keyspace: tables_names for keyspace in ks_names}
+
+        _ks_names = ks_names if ks_names else ['keyspace1']
+        _tables_names = tables_names if tables_names else ['standard1']
+        ks_tables_map = {keyspace: _tables_names for keyspace in _ks_names}
+
         if truncate:
             for ks, tables in ks_tables_map.items():
                 for table_name in tables:
@@ -605,18 +605,18 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         self.log.info('starting test_restore_backup_with_task')
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
         mgr_cluster = self._ensure_and_get_cluster(manager_tool)
-        if not ks_names:
-            ks_names = ['keyspace1']
-        backup_task = mgr_cluster.create_backup_task(location_list=self.locations, keyspace_list=ks_names)
+
+        _ks_names = ks_names if ks_names else ['keyspace1']
+        backup_task = mgr_cluster.create_backup_task(location_list=self.locations, keyspace_list=_ks_names)
         backup_task_status = backup_task.wait_and_get_final_status(timeout=1500)
         assert backup_task_status == TaskStatus.DONE, \
             f"Backup task ended in {backup_task_status} instead of {TaskStatus.DONE}"
         soft_timeout = 36 * 60
         hard_timeout = 50 * 60
         with adaptive_timeout(Operations.MGMT_REPAIR, self.db_cluster.nodes[0], timeout=soft_timeout):
-            self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, ks_names=ks_names,
+            self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, ks_names=_ks_names,
                                        restore_data_with_task=True, timeout=hard_timeout)
-        self.run_verification_read_stress(ks_names)
+        self.run_verification_read_stress(_ks_names)
         mgr_cluster.delete()  # remove cluster at the end of the test
         self.log.info('finishing test_restore_backup_with_task')
 
