@@ -505,9 +505,9 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         InfoEvent(message=f'The backup task has ended successfully. Backup run time: {backup_task.duration}').publish()
         self.manager_test_metrics.backup_time = backup_task.duration
 
-        keyspace_num = self.params.get('keyspace_num') or 1
-        for i in range(1, keyspace_num + 1):
-            self.db_cluster.nodes[0].run_cqlsh(f'TRUNCATE keyspace{i}.standard1')
+        # keyspace_num = self.params.get('keyspace_num') or 1
+        # for i in range(1, keyspace_num + 1):
+        self.db_cluster.nodes[0].run_cqlsh(f'TRUNCATE keyspace_lz4.standard1')
 
         if restore_params := self.params.get('mgmt_restore_params'):
             batch_size = restore_params.batch_size
