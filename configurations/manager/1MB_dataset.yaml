@@ -5,3 +5,4 @@ stress_read_cmd: ["cassandra-stress read cl=ONE n=1000 -schema 'replication(stra
 
 instance_type_db: 'i4i.2xlarge'
 instance_type_loader: 'c6i.xlarge'
+#reuse_cluster: '021fdbf9-bdf3-4aca-b515-7a4c80480802'
