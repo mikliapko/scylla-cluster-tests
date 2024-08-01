@@ -187,37 +187,7 @@ def call(Map pipelineParams) {
                     }
                }
             }
-            stage('Create Argus Test Run') {
-                steps {
-                    catchError(stageResult: 'FAILURE') {
-                        script {
-                            wrap([$class: 'BuildUser']) {
-                                dir('scylla-cluster-tests') {
-                                    timeout(time: 5, unit: 'MINUTES') {
-                                        createArgusTestRun(params)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            stage('Get test duration') {
-                options {
-                    timeout(time: 10, unit: 'MINUTES')
-                }
-                steps {
-                    catchError(stageResult: 'FAILURE') {
-                        script {
-                            wrap([$class: 'BuildUser']) {
-                                dir('scylla-cluster-tests') {
-                                    (testDuration, testRunTimeout, runnerTimeout, collectLogsTimeout, resourceCleanupTimeout) = getJobTimeouts(params, builder.region)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+
             stage('Create SCT Runner') {
                 options {
                     timeout(time: 5, unit: 'MINUTES')
@@ -228,187 +198,6 @@ def call(Map pipelineParams) {
                             dir('scylla-cluster-tests') {
                                 createSctRunner(params, runnerTimeout , builder.region)
                             }
-                        }
-                    }
-                }
-            }
-            stage('Provision Resources') {
-                steps {
-                    catchError() {
-                        script {
-                            wrap([$class: 'BuildUser']) {
-                                dir('scylla-cluster-tests') {
-                                    timeout(time: 30, unit: 'MINUTES') {
-                                        if (params.backend == 'aws' || params.backend == 'azure') {
-                                            provisionResources(params, builder.region)
-                                        } else if (params.backend.contains('docker')) {
-                                            sh """
-                                                echo 'Tests are to be executed on Docker backend in SCT-Runner. No additional resources to be provisioned.'
-                                            """
-                                        } else {
-                                            sh """
-                                                echo 'Skipping because non-AWS/Azure backends are not supported'
-                                            """
-                                        }
-                                        completed_stages['provision_resources'] = true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            stage('Run SCT Test') {
-                steps {
-                    catchError(stageResult: 'FAILURE') {
-                        script {
-                            wrap([$class: 'BuildUser']) {
-                                timeout(time: testRunTimeout, unit: 'MINUTES') {
-                                    dir('scylla-cluster-tests') {
-
-                                        // handle params which can be a json list
-                                        def region = initAwsRegionParam(params.region, builder.region)
-                                        def datacenter = groovy.json.JsonOutput.toJson(params.gce_datacenter)
-                                        def test_config = groovy.json.JsonOutput.toJson(params.test_config)
-                                        def cloud_provider = params.backend.trim().toLowerCase()
-
-                                        sh """#!/bin/bash
-                                        set -xe
-                                        env
-                                        rm -fv ./latest
-
-                                        export SCT_CLUSTER_BACKEND="${params.backend}"
-                                        export SCT_REGION_NAME=${region}
-                                        export SCT_GCE_DATACENTER=${datacenter}
-
-                                        if [[ ! -z "${params.n_db_nodes}" ]] ; then
-                                            export SCT_N_DB_NODES=${params.n_db_nodes}
-                                        fi
-
-                                        if [[ -n "${params.azure_region_name ? params.azure_region_name : ''}" ]] ; then
-                                            export SCT_AZURE_REGION_NAME=${params.azure_region_name}
-                                        fi
-                                        export SCT_CONFIG_FILES=${test_config}
-                                        export SCT_COLLECT_LOGS=false
-
-                                        if [[ -n "${params.backup_bucket_backend}" ]] ; then
-                                            export SCT_BACKUP_BUCKET_BACKEND="${params.backup_bucket_backend}"
-                                        fi
-
-                                        if [[ ! -z "${params.scylla_ami_id}" ]] ; then
-                                            export SCT_AMI_ID_DB_SCYLLA="${params.scylla_ami_id}"
-                                        elif [[ ! -z "${params.scylla_version}" ]] ; then
-                                            export SCT_SCYLLA_VERSION="${params.scylla_version}"
-                                        elif [[ ! -z "${params.gce_image_db}" ]] ; then
-                                            export SCT_GCE_IMAGE_DB="${params.gce_image_db}"  #TODO: remove it once scylla_version supports gce image detection
-                                        elif [[ ! -z "${params.azure_image_db}" ]] ; then
-                                            export SCT_AZURE_IMAGE_DB="${params.azure_image_db}"  #TODO: remove it once scylla_version supports azure image detection
-                                        elif [[ ! -z "${params.scylla_repo}" ]] ; then
-                                            export SCT_SCYLLA_REPO="${params.scylla_repo}"
-                                        else
-                                            echo "need to choose one of SCT_AMI_ID_DB_SCYLLA | SCT_GCE_IMAGE_DB | SCT_SCYLLA_VERSION | SCT_SCYLLA_REPO | SCT_AZURE_IMAGE_DB"
-                                            exit 1
-                                        fi
-                                        if [[ -n "${params.availability_zone ? params.availability_zone : ''}" ]] ; then
-                                            export SCT_AVAILABILITY_ZONE="${params.availability_zone}"
-                                        fi
-                                        export SCT_POST_BEHAVIOR_DB_NODES="${params.post_behavior_db_nodes}"
-                                        export SCT_POST_BEHAVIOR_LOADER_NODES="${params.post_behavior_loader_nodes}"
-                                        export SCT_POST_BEHAVIOR_MONITOR_NODES="${params.post_behavior_monitor_nodes}"
-                                        export SCT_INSTANCE_PROVISION="${params.provision_type}"
-                                        export SCT_AMI_ID_DB_SCYLLA_DESC=\$(echo \$GIT_BRANCH | sed -E 's+(origin/|origin/branch-)++')
-                                        export SCT_AMI_ID_DB_SCYLLA_DESC=\$(echo \$SCT_AMI_ID_DB_SCYLLA_DESC | tr ._ - | cut -c1-8 )
-
-                                        export SCT_IP_SSH_CONNECTIONS="${params.ip_ssh_connections}"
-
-                                        if [[ ! -z "${params.scylla_mgmt_address}" ]] ; then
-                                            export SCT_SCYLLA_MGMT_ADDRESS="${params.scylla_mgmt_address}"
-                                        fi
-
-                                        if [[ ! -z "${params.manager_version}" ]] ; then
-                                            export SCT_MANAGER_VERSION="${params.manager_version}"
-                                        fi
-
-                                        if [[ ! -z "${params.target_manager_version}" ]] ; then
-                                            export SCT_TARGET_MANAGER_VERSION="${params.target_manager_version}"
-                                        fi
-
-                                        if [[ ! -z "${params.target_scylla_mgmt_server_address}" ]] ; then
-                                            export SCT_TARGET_SCYLLA_MGMT_SERVER_ADDRESS="${params.target_scylla_mgmt_server_address}"
-                                        fi
-
-                                        if [[ ! -z "${params.target_scylla_mgmt_agent_address}" ]] ; then
-                                            export SCT_TARGET_SCYLLA_MGMT_AGENT_ADDRESS="${params.target_scylla_mgmt_agent_address}"
-                                        fi
-
-                                        if [[ ! -z "${params.scylla_mgmt_agent_address}" ]] ; then
-                                            export SCT_SCYLLA_MGMT_AGENT_ADDRESS="${params.scylla_mgmt_agent_address}"
-                                        fi
-
-                                        if [[ ! -z "${params.scylla_mgmt_pkg}" ]] ; then
-                                            export SCT_SCYLLA_MGMT_PKG="${params.scylla_mgmt_pkg}"
-                                        fi
-
-                                        if [[ ! -z "${params.mgmt_restore_params}" ]] ; then
-                                            export SCT_MGMT_RESTORE_PARAMS="${params.mgmt_restore_params}"
-                                        fi
-
-                                        if [[ ! -z "${params.mgmt_agent_backup_config}" ]] ; then
-                                            export SCT_MGMT_AGENT_BACKUP_CONFIG="${params.mgmt_agent_backup_config}"
-                                        fi
-
-                                        if [[ ! -z "${params.keyspace_num}" ]] ; then
-                                            export SCT_KEYSPACE_NUM="${params.keyspace_num}"
-                                        fi
-
-                                        echo "start test ......."
-                                        RUNNER_IP=\$(cat sct_runner_ip||echo "")
-                                        if [[ -n "\${RUNNER_IP}" ]] ; then
-                                            ./docker/env/hydra.sh --execute-on-runner \${RUNNER_IP} run-test ${params.test_name} --backend ${params.backend}
-                                        else
-                                            ./docker/env/hydra.sh run-test ${params.test_name} --backend ${params.backend}  --logdir "`pwd`"
-                                        fi
-                                        echo "end test ....."
-                                        """
-                                        completed_stages['run_tests'] = true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            stage('Running Downstream Jobs') {  // Specifically placed after test stage, since downstream jobs should still be triggered when stages like collect logs fail.
-                options {
-                    timeout(time: 5, unit: 'MINUTES')
-                }
-                steps {
-                    script {
-                        if (currentBuild.currentResult == 'SUCCESS') {
-                            jobNamesToTrigger = params.downstream_jobs_to_run.split(',')
-                            currentJobDirectoryPath = JOB_NAME.substring(0, JOB_NAME.lastIndexOf('/'))
-                            for (downstreamJobName in jobNamesToTrigger) {
-                                fullJobPath = currentJobDirectoryPath + '/' + downstreamJobName.trim()
-                                def repoParams = []
-                                if (downstreamJobName.contains("upgrade")) {
-                                    repoParams = [
-                                        [$class: 'StringParameterValue', name: 'target_scylla_mgmt_server_address', value: params.scylla_mgmt_address],
-                                        [$class: 'StringParameterValue', name: 'target_scylla_mgmt_agent_address', value: params.scylla_mgmt_agent_address],
-                                        [$class: 'StringParameterValue', name: 'TARGET_MANAGER_VERSION', value: params.manager_version],
-                                        [$class: 'StringParameterValue', name: 'provision_type', value: params.provision_type]
-                                    ]
-                                } else {
-                                    repoParams = [
-                                        [$class: 'StringParameterValue', name: 'scylla_mgmt_address', value: params.scylla_mgmt_address],
-                                        [$class: 'StringParameterValue', name: 'scylla_mgmt_agent_address', value: params.scylla_mgmt_agent_address],
-                                        [$class: 'StringParameterValue', name: 'manager_version', value: params.manager_version],
-                                        [$class: 'StringParameterValue', name: 'provision_type', value: params.provision_type]
-                                    ]
-                                }
-                                triggerJob(fullJobPath, repoParams)
-                            }
-                        } else {
-                            echo "Job failed. Will not run downstream jobs."
                         }
                     }
                 }
@@ -445,23 +234,6 @@ def call(Map pipelineParams) {
                     }
                 }
             }
-            stage("Send email with result") {
-                options {
-                    timeout(time: 10, unit: 'MINUTES')
-                }
-                steps {
-                    catchError(stageResult: 'FAILURE') {
-                        script {
-                            wrap([$class: 'BuildUser']) {
-                                dir('scylla-cluster-tests') {
-                                    runSendEmail(params, currentBuild)
-                                    completed_stages['send_email'] = true
-                                }
-                            }
-                        }
-                    }
-                }
-            }
             stage('Clean SCT Runners') {
                 steps {
                     catchError(stageResult: 'FAILURE') {
@@ -476,31 +248,12 @@ def call(Map pipelineParams) {
                     }
                 }
             }
-            stage('Finish Argus Test Run') {
-                steps {
-                    catchError(stageResult: 'FAILURE') {
-                        script {
-                            wrap([$class: 'BuildUser']) {
-                                dir('scylla-cluster-tests') {
-                                    timeout(time: 5, unit: 'MINUTES') {
-                                        finishArgusTestRun(params, currentBuild)
-                                        completed_stages['report_to_argus'] = true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
         post {
             always {
                 script {
-                    def provision_resources = completed_stages['provision_resources']
-                    def run_tests = completed_stages['run_tests']
                     def collect_logs = completed_stages['collect_logs']
                     def clean_resources = completed_stages['clean_resources']
-                    def send_email = completed_stages['send_email']
                     def clean_sct_runner = completed_stages['clean_sct_runner']
                     sh """
                         echo "'provision_resources' stage is completed: $provision_resources"
@@ -517,32 +270,6 @@ def call(Map pipelineParams) {
                                     dir('scylla-cluster-tests') {
                                         timeout(time: resourceCleanupTimeout, unit: 'MINUTES') {
                                             runCleanupResource(params, builder.region)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (!completed_stages['send_email']) {
-                        catchError {
-                            script {
-                                wrap([$class: 'BuildUser']) {
-                                    dir('scylla-cluster-tests') {
-                                        timeout(time: 10, unit: 'MINUTES') {
-                                            runSendEmail(params, currentBuild)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (!completed_stages['report_to_argus']) {
-                        catchError {
-                            script {
-                                wrap([$class: 'BuildUser']) {
-                                    dir('scylla-cluster-tests') {
-                                        timeout(time: 5, unit: 'MINUTES') {
-                                            finishArgusTestRun(params, currentBuild)
                                         }
                                     }
                                 }

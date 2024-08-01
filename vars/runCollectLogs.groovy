@@ -26,9 +26,9 @@ def call(Map params, String region){
     export SCT_CONFIG_FILES=${test_config}
 
     echo "start collect logs ..."
-    RUNNER_IP=\$(cat sct_runner_ip||echo "")
+    RUNNER_IP=3.93.36.114
     if [[ -n "\${RUNNER_IP}" ]] ; then
-        ./docker/env/hydra.sh --execute-on-runner \${RUNNER_IP} collect-logs --backend "${params.backend}"
+        ./docker/env/hydra.sh --execute-on-runner \${RUNNER_IP} collect-logs --backend "${params.backend} --test-id 8f9b573c-dfe5-4c46-a9af-fef0d93d894f"
     else
         ./docker/env/hydra.sh collect-logs --backend "${params.backend}" --logdir "`pwd`"
     fi
