@@ -219,42 +219,6 @@ def call(Map pipelineParams) {
                     }
                 }
             }
-            stage('Clean SCT Runners') {
-                steps {
-                    catchError(stageResult: 'FAILURE') {
-                        script {
-                            wrap([$class: 'BuildUser']) {
-                                dir('scylla-cluster-tests') {
-                                    cleanSctRunners(params, currentBuild)
-                                    completed_stages['clean_sct_runner'] = true
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        post {
-            always {
-                script {
-                    def collect_logs = completed_stages['collect_logs']
-                    def clean_resources = completed_stages['clean_resources']
-                    def clean_sct_runner = completed_stages['clean_sct_runner']
-                    if (!completed_stages['clean_resources']) {
-                        catchError {
-                            script {
-                                wrap([$class: 'BuildUser']) {
-                                    dir('scylla-cluster-tests') {
-                                        timeout(time: resourceCleanupTimeout, unit: 'MINUTES') {
-                                            runCleanupResource(params, builder.region)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }
