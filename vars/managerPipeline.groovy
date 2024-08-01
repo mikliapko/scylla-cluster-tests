@@ -193,7 +193,7 @@ def call(Map pipelineParams) {
                         script {
                             wrap([$class: 'BuildUser']) {
                                 dir('scylla-cluster-tests') {
-                                    timeout(time: 10, unit: 'MINUTES') {
+                                    timeout(time: 5, unit: 'MINUTES') {
                                         runCollectLogs(params, builder.region)
                                         completed_stages['collect_logs'] = true
                                     }
@@ -209,7 +209,7 @@ def call(Map pipelineParams) {
                         script {
                             wrap([$class: 'BuildUser']) {
                                 dir('scylla-cluster-tests') {
-                                    timeout(time: resourceCleanupTimeout, unit: 'MINUTES') {
+                                    timeout(time: 10, unit: 'MINUTES') {
                                         runCleanupResource(params, builder.region)
                                         completed_stages['clean_resources'] = true
                                     }
