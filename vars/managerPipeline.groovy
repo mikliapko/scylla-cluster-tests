@@ -187,21 +187,6 @@ def call(Map pipelineParams) {
                     }
                }
             }
-
-            stage('Create SCT Runner') {
-                options {
-                    timeout(time: 5, unit: 'MINUTES')
-                }
-                steps {
-                    script {
-                        wrap([$class: 'BuildUser']) {
-                            dir('scylla-cluster-tests') {
-                                createSctRunner(params, runnerTimeout , builder.region)
-                            }
-                        }
-                    }
-                }
-            }
             stage("Collect log data") {
                 steps {
                     catchError(stageResult: 'FAILURE') {
@@ -255,14 +240,6 @@ def call(Map pipelineParams) {
                     def collect_logs = completed_stages['collect_logs']
                     def clean_resources = completed_stages['clean_resources']
                     def clean_sct_runner = completed_stages['clean_sct_runner']
-                    sh """
-                        echo "'provision_resources' stage is completed: $provision_resources"
-                        echo "'run_tests' stage is completed: $run_tests"
-                        echo "'collect_logs' stage is completed: $collect_logs"
-                        echo "'clean_resources' stage is completed: $clean_resources"
-                        echo "'send_email' stage is completed: $send_email"
-                        echo "'clean_sct_runner' stage is completed: $clean_sct_runner"
-                    """
                     if (!completed_stages['clean_resources']) {
                         catchError {
                             script {
