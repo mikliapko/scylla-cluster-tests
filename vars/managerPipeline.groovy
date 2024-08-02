@@ -150,6 +150,18 @@ def call(Map pipelineParams) {
                                    For example, {'batch_size': 2, 'parallel': 1}""",
                    name: 'mgmt_restore_params')
 
+            string(defaultValue: "${pipelineParams.get('mgmt_reuse_backup_snapshot', '')}",
+                   description: """Name of backup snapshot to use in Manager restore benchmark test, for example, 500gb_2t_ics.
+                                   The name provides the info about dataset size (500gb), number of tables (2) and compaction (ICS).
+                                   All snapshots are defined in the 'https://github.com/scylladb/scylla-cluster-tests/blob/master/defaults/manager_restore_benchmark_snapshots.yaml'""",
+                   name: 'mgmt_reuse_backup_snapshot')
+
+            string(defaultValue: "${pipelineParams.get('mgmt_ignore_post_restore_stress_read', 'true')}",
+                   description: """The flag to ignore the post-restore stress read in restore benchmark test.
+                                   Leave empty to NOT ignore the post-restore stress read.
+                                   Supported values are true, false""",
+                   name: 'mgmt_ignore_post_restore_stress_read')
+
             string(defaultValue: "${pipelineParams.get('mgmt_agent_backup_config', '')}",
                    description: """Backup general configuration for the agent (scylla-manager-agent.yaml):
                                    checkers, transfers, low_level_retries.
@@ -351,6 +363,14 @@ def call(Map pipelineParams) {
 
                                         if [[ ! -z "${params.mgmt_restore_params}" ]] ; then
                                             export SCT_MGMT_RESTORE_PARAMS="${params.mgmt_restore_params}"
+                                        fi
+
+                                        if [[ ! -z "${params.mgmt_reuse_backup_snapshot}" ]] ; then
+                                            export SCT_MGMT_REUSE_BACKUP_SNAPSHOT="${params.mgmt_reuse_backup_snapshot}"
+                                        fi
+
+                                        if [[ ! -z "${params.mgmt_ignore_post_restore_stress_read}" ]] ; then
+                                            export SCT_MGMT_IGNORE_POST_RESTORE_STRESS_READ="${params.mgmt_ignore_post_restore_stress_read}"
                                         fi
 
                                         if [[ ! -z "${params.mgmt_agent_backup_config}" ]] ; then

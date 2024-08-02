@@ -1127,6 +1127,13 @@ class SCTConfiguration(dict):
              help="Manager agent backup general configuration: checkers, transfers, low_level_retries. "
                   "For example, {'checkers': 100, 'transfers': 2, 'low_level_retries': 20}"),
 
+        dict(name="mgmt_reuse_backup_snapshot", env="SCT_MGMT_REUSE_BACKUP_SNAPSHOT", type=str,
+             help="Name of backup snapshot to use in Manager restore benchmark test, for example, 500gb_2t_ics. "
+                  "The name provides the info about dataset size (500gb), tables number (2) and compaction (ICS)"),
+
+        dict(name="mgmt_ignore_post_restore_stress_read", env="SCT_MGMT_IGNORE_POST_RESTORE_STRESS_READ", type=boolean,
+             help="Ignore post-restore c-s verification read in the Manager restore benchmark tests"),
+
         # PerformanceRegressionTest
 
         dict(name="stress_cmd_w", env="SCT_STRESS_CMD_W",
