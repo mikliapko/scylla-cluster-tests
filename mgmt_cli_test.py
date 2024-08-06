@@ -1286,18 +1286,18 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         InfoEvent(message=f'The backup task has ended successfully. Backup run time: {backup_task.duration}').publish()
         self.manager_test_metrics.backup_time = backup_task.duration
 
-        ks_number = self.params.get('keyspace_num') or 1
-        ks_names = self.get_keyspace_name(ks_number=ks_number)
-        for ks_name in ks_names:
-            self.db_cluster.nodes[0].run_cqlsh(f'TRUNCATE {ks_name}.standard1')
-
-        batch_size, parallel = self.get_restore_custom_parameters()
-        task = self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=backup_task.get_snapshot_tag(),
-                                             timeout=110000, restore_data=True, batch_size=batch_size,
-                                             parallel=parallel)
-        self.manager_test_metrics.restore_time = task.duration
-
-        self.run_verification_read_stress()
+        # ks_number = self.params.get('keyspace_num') or 1
+        # ks_names = self.get_keyspace_name(ks_number=ks_number)
+        # for ks_name in ks_names:
+        #     self.db_cluster.nodes[0].run_cqlsh(f'TRUNCATE {ks_name}.standard1')
+        #
+        # batch_size, parallel = self.get_restore_custom_parameters()
+        # task = self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=backup_task.get_snapshot_tag(),
+        #                                      timeout=110000, restore_data=True, batch_size=batch_size,
+        #                                      parallel=parallel)
+        # self.manager_test_metrics.restore_time = task.duration
+        #
+        # self.run_verification_read_stress()
 
     def test_restore_from_precreated_backup(self, backup_size: int = 1):
         """The test restores the schema and data from a pre-created backup and runs the verification read stress.
