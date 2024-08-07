@@ -1233,3 +1233,22 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
             assert host_health.rest_status == HostRestStatus.UP, "Host REST status is not 'UP'"
 
         self.log.info('finishing test_manager_installed_and_functional')
+
+    def test_prepare_backup(self):
+        self.run_prepare_write_cmd()
+
+        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
+        mgr_cluster = self._ensure_and_get_cluster(manager_tool)
+
+        locations = ["s3:manager-backup-tests-permanent-snapshots-us-east-1"]
+        backup_task = mgr_cluster.create_backup_task(location_list=locations, rate_limit_list=["0"])
+        backup_task_status = backup_task.wait_and_get_final_status(timeout=150000)
+        assert backup_task_status == TaskStatus.DONE, \
+            f"Backup task ended in {backup_task_status} instead of {TaskStatus.DONE}"
+        snapshot_tag = backup_task.get_snapshot_tag()
+        InfoEvent(message=f'The backup task has ended successfully: '
+                          f'backup snapshot - {snapshot_tag};'
+                          f'cluster id - {mgr_cluster.id}').publish()
+
+        output = self.db_cluster.nodes[0].run_cqlsh("desc keyspaces")
+        InfoEvent(message=f'Keyspaces - {output.stdout}').publish()

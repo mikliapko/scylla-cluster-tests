@@ -1,0 +1,6 @@
+test_duration: 720
+
+prepare_write_cmd: ["cassandra-stress write cl=QUORUM n=5242880 -schema 'keyspace=5gb_sizetiered_6_0 replication(strategy=NetworkTopologyStrategy,replication_factor=3) compaction(strategy=SizeTieredCompactionStrategy)' -mode cql3 native -rate threads=50 -col 'size=FIXED(64) n=FIXED(16)' -pop seq=1..5242880"]
+
+instance_type_db: 'i4i.large'
+instance_type_loader: 'c6i.large'
