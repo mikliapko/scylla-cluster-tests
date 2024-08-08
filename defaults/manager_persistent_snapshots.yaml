@@ -3,78 +3,53 @@ aws:
   confirmation_stress_template: "cassandra-stress read cl=QUORUM n={num_of_rows} -schema 'keyspace={keyspace_name} replication(strategy=NetworkTopologyStrategy,replication_factor=3) compaction(strategy=SizeTieredCompactionStrategy)' -mode cql3 native  -rate threads=50 -col 'size=FIXED(64) n=FIXED(16)' -pop seq={sequence_start}..{sequence_end}"
   snapshots_sizes:
     5:
-      number_of_rows: 5242880
+      number_of_rows: 5368800
       expected_timeout: 1800  # 30 minutes
       snapshots:
-        'sm_20230702185929UTC':
-          keyspace_name: "5gb_sizetiered_2022_2"
-          scylla_version: "2022.2.9"
+        'sm_20240809142352UTC':
+          keyspace_name: "5gb_sizetiered_2024_2_0_rc1"
+          scylla_version: "2024.2.0~rc1"
           scylla_product: "enterprise"
-          number_of_nodes: 5
-        'sm_20230702201949UTC':
-          keyspace_name: "5gb_sizetiered_2022_1"
-          scylla_version: "2022.1.7"
-          scylla_product: "enterprise"
-          number_of_nodes: 5
-        'sm_20230702190638UTC':
-          keyspace_name: "5gb_sizetiered_5_2"
-          scylla_version: "5.2.3"
-          scylla_product: "oss"
-          number_of_nodes: 5
-    10:
-      number_of_rows: 10485760
-      expected_timeout: 3600  # 60 minutes
-      snapshots:
-        'sm_20230223105105UTC':
-          keyspace_name: "10gb_sizetiered"
-          scylla_version: "5.1.6"
-          scylla_product: "oss"
           number_of_nodes: 3
-        'sm_20230702173347UTC':
-          keyspace_name: "10gb_sizetiered_2022_2"
-          scylla_version: "2022.2.9"
-          scylla_product: "enterprise"
-          number_of_nodes: 4
-        'sm_20230702173940UTC':
-          keyspace_name: "10gb_sizetiered_2022_1"
-          scylla_version: "2022.1.7"
-          scylla_product: "enterprise"
-          number_of_nodes: 4
-        'sm_20230702173329UTC':
-          keyspace_name: "10gb_sizetiered_5_2"
-          scylla_version: "5.2.3"
-          scylla_product: "oss"
-          number_of_nodes: 4
-    100:
-      number_of_rows: 104857600
-      expected_timeout: 18000  # 300 minutes
-      snapshots:
-        'sm_20230223130733UTC':
-          keyspace_name: "100gb_sizetiered"
-          scylla_version: "5.1.6"
-          scylla_product: "oss"
-          number_of_nodes: 3
-        'sm_20230702235739UTC':
-          keyspace_name: "100gb_sizetiered_2022_2"
-          scylla_version: "2022.2.9"
-          scylla_product: "enterprise"
-          number_of_nodes: 4
-        'sm_20230703000641UTC':
-          keyspace_name: "100gb_sizetiered_2022_1"
-          scylla_version: "2022.1.7"
-          scylla_product: "enterprise"
-          number_of_nodes: 4
-        'sm_20230703000157UTC':
-          keyspace_name: "100gb_sizetiered_5_2"
-          scylla_version: "5.2.3"
-          scylla_product: "oss"
-          number_of_nodes: 4
-    2048:
-      number_of_rows: 2147483648
-      expected_timeout: 132000  # 2200 minutes
-      snapshots:
-        'sm_20230226074656UTC':
-          keyspace_name: "2tb_sizetiered"
-          scylla_version: "5.1.6"
-          scylla_product: "oss"
-          number_of_nodes: 3
+#        'sm_20240808092632UTC':
+#          keyspace_name: "5gb_sizetiered_6_0"
+#          scylla_version: "6.0.2"
+#          scylla_product: "oss"
+#          number_of_nodes: 3
+#    10:
+#      number_of_rows: 10737600
+#      expected_timeout: 3600  # 60 minutes
+#      snapshots:
+#        'sm_20240808102750UTC':
+#          keyspace_name: "10gb_sizetiered_2024_2_0_rc1"
+#          scylla_version: "2024.2.0~rc1"
+#          scylla_product: "enterprise"
+#          number_of_nodes: 3
+#        'sm_20240808095138UTC':
+#          keyspace_name: "10gb_sizetiered_6_0"
+#          scylla_version: "6.0.2"
+#          scylla_product: "oss"
+#          number_of_nodes: 3
+#    100:
+#      number_of_rows: 107376000
+#      expected_timeout: 18000  # 300 minutes
+#      snapshots:
+#        'sm_20240808110911UTC':
+#          keyspace_name: "100gb_sizetiered_2024_2_0_rc1"
+#          scylla_version: "2024.2.0~rc1"
+#          scylla_product: "enterprise"
+#          number_of_nodes: 3
+#        'sm_20240808112853UTC':
+#          keyspace_name: "100gb_sizetiered_6_0"
+#          scylla_version: "6.0.2"
+#          scylla_product: "oss"
+#          number_of_nodes: 3
+#    2048:
+#      number_of_rows: 2147483648
+#      expected_timeout: 132000  # 2200 minutes
+#      snapshots:
+#        'sm_20230226074656UTC':
+#          keyspace_name: "2tb_sizetiered"
+#          scylla_version: "5.1.6"
+#          scylla_product: "oss"
+#          number_of_nodes: 3
