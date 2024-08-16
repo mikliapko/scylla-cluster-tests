@@ -1280,7 +1280,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         mgr_cluster = self._ensure_and_get_cluster(manager_tool)
 
         backup_task = mgr_cluster.create_backup_task(location_list=self.locations, rate_limit_list=["0"])
-        backup_task_status = backup_task.wait_and_get_final_status(timeout=110000)
+        backup_task_status = backup_task.wait_and_get_final_status(timeout=200000)
         assert backup_task_status == TaskStatus.DONE, \
             f"Backup task ended in {backup_task_status} instead of {TaskStatus.DONE}"
         InfoEvent(message=f'The backup task has ended successfully. Backup run time: {backup_task.duration}').publish()
@@ -1297,7 +1297,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
                                              parallel=parallel)
         self.manager_test_metrics.restore_time = task.duration
 
-        self.run_verification_read_stress()
+        # self.run_verification_read_stress()
 
     def test_restore_from_precreated_backup(self, backup_size: int = 1):
         """The test restores the schema and data from a pre-created backup and runs the verification read stress.

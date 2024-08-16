@@ -1,0 +1,77 @@
+keyspace: keyspace1
+
+keyspace_definition: |
+  CREATE KEYSPACE IF NOT EXISTS keyspace1 WITH replication = {'class':'NetworkTopologyStrategy','replication_factor':'3'} AND durable_writes = true;
+
+table: t_10gb
+
+table_definition: |
+  CREATE TABLE t_10gb (
+      pkid text PRIMARY KEY,
+      name text,
+      number int,
+      starttime timestamp,
+      weight decimal,
+      steps float,
+      t_num tinyint,
+      bvalue blob,
+      boy boolean,
+      vname varchar,
+      vage varint,
+      nums_set set<int>,
+      names_set set<text>
+  ) WITH bloom_filter_fp_chance = 0.01
+      AND caching = {'keys':'ALL','rows_per_partition':'ALL'}
+      AND comment = ''
+      AND compaction = {'class':'TimeWindowCompactionStrategy','compaction_window_size':'5','compaction_window_unit':'DAYS','tombstone_compaction_interval':'3600','tombstone_threshold':'0.2'}
+      AND compression = {'sstable_compression':'org.apache.cassandra.io.compress.LZ4Compressor'}
+      AND crc_check_chance = 1.0
+      AND dclocal_read_repair_chance = 0.0
+      AND default_time_to_live = 7776000
+      AND gc_grace_seconds = 43200
+      AND max_index_interval = 2048
+      AND memtable_flush_period_in_ms = 0
+      AND min_index_interval = 128
+      AND read_repair_chance = 0.0
+      AND speculative_retry = '99.0PERCENTILE';
+
+columnspec:
+  # In such configuration one row of data is ~ 1KB
+  - name: pkid
+    size: fixed(1000)
+    population: seq(1..50000000)
+
+  - name: bvalue
+    size: fixed(1000)
+
+  - name: vname
+    size: fixed(1000)
+
+  - name: nums_set
+    size: fixed(5)
+    population: exp(1..5)
+
+  - name: names_set
+    size: fixed(100)
+    population: exp(1..10)
+
+insert:
+  partitions: fixed(1)
+  batchtype: UNLOGGED
+
+queries:
+  read1:
+    cql: select * from keyspace1.t_10gb where pkid = ?
+    fields: samerow
+  update_name:
+    cql: update keyspace1.t_10gb set name = ?, nums_set = ? where pkid = ?
+    fields: samerow
+  update_number:
+    cql: update keyspace1.t_10gb set number = ?, names_set = ? where pkid = ?
+    fields: samerow
+  update_all:
+    cql: update keyspace1.t_10gb set name = ?,number = ?,starttime = ?,weight = ?,steps = ?,t_num = ?,bvalue = ?,boy = ?,vname = ?,vage = ?,nums_set = ?,names_set = ? where pkid = ?
+    fields: samerow
+  delete1:
+    cql: delete from keyspace1.t_10gb where pkid = ?
+    fields: samerow
