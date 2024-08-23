@@ -7,6 +7,10 @@ sizes:  # size of backed up dataset in GB
       keyspace1:
         - standard1: 1
     number_of_rows: 1073760
+    node_ids:
+      - "31c43513-0848-41f3-b6a7-0160a5a0aff1"
+      - "78a82e22-dc4d-4bb9-8ba4-6e13f3c3f202"
+      - "b47d88a9-04bf-41f4-8695-a63ada0ae517"
     exp_timeout: 1200  # 20 minutes (timeout for restore data operation)
     scylla_version: "2024.2.0-rc0"
     number_of_nodes: 3
@@ -18,6 +22,10 @@ sizes:  # size of backed up dataset in GB
       keyspace1:
         - standard1: 500
     number_of_rows: 524288000
+    node_ids:
+      - "025d3905-c3a0-4652-9cb4-0e4f5993b747"
+      - "1baa5559-b077-43e1-b14b-dd07977a54d2"
+      - "dc67474d-07dc-4188-9d02-6a37bd74b398"
     exp_timeout: 14400  # 4 hours
     scylla_version: "2024.2.0-rc0"
     number_of_nodes: 3
@@ -29,6 +37,10 @@ sizes:  # size of backed up dataset in GB
       keyspace1:
         - standard1: 500
     number_of_rows: 524288000
+    node_ids:
+      - "67270305-c179-474f-887e-1ec04dd08f6d"
+      - "8594bca8-d5fd-4f2b-86b9-6efac2db872d"
+      - "ec20f7e4-c697-4990-b37b-fca4e5b217bd"
     exp_timeout: 14400  # 4 hours
     scylla_version: "2024.2.0-rc0"
     number_of_nodes: 3
@@ -42,6 +54,10 @@ sizes:  # size of backed up dataset in GB
       keyspace2:
         - standard1: 250
     number_of_rows: 524288000
+    node_ids:
+      - "a39f3edc-9672-46d2-a3cf-f2e590751a94"
+      - "b56914b2-0008-4ab1-854a-b457e85d6b87"
+      - "ea93dad4-7da2-4ed8-a67b-a1a6cfc91d67"
     exp_timeout: 14400  # 4 hours
     scylla_version: "2024.2.0-rc0"
     number_of_nodes: 3
@@ -53,6 +69,10 @@ sizes:  # size of backed up dataset in GB
       keyspace1:
         - standard1: 1024
     number_of_rows: 1073741824
+    node_ids:
+      - "68d4e057-90d4-40b1-b16f-0143908a1b11"
+      - "de6d4df9-8341-4b9b-9ea4-5a68defd6897"
+      - "ffbfcc8e-9c9c-4d99-a97b-4e723532c89f"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.0-rc0"
     number_of_nodes: 3
@@ -67,6 +87,10 @@ sizes:  # size of backed up dataset in GB
         - t_300gb: 300
         - t_600gb: 600
     number_of_rows: 428571429
+    node_ids:
+      - "00cf0fc3-c06e-450c-9ef9-36a7a2da9d1b"
+      - "af06bc8f-594b-4ed0-b369-0f3e0b953c42"
+      - "b55ac84c-78f0-4486-8cb7-bd7ed37058db"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.0-rc0"
     number_of_nodes: 3
@@ -80,6 +104,10 @@ sizes:  # size of backed up dataset in GB
       keyspace2:
         - standard1: 1024
     number_of_rows: 1598029824
+    node_ids:
+      - "9ab21a60-0b1b-4b9b-82c5-245168b1f4c1"
+      - "e141fec6-d603-4171-b079-501f992936a9"
+      - "f01971c5-6df6-4e73-afc8-f6d1c0989284"
     exp_timeout: 43200  # 12 hours
     scylla_version: "2024.2.0-rc0"
     number_of_nodes: 3
@@ -91,6 +119,10 @@ sizes:  # size of backed up dataset in GB
       keyspace1:
         - standard1: 2048
     number_of_rows: 2147483648
+    node_ids:
+      - "c55f1575-7d9a-4a99-b597-ba958d1c67cd"
+      - "da271439-bb8d-4364-8c4f-ca9eb011a923"
+      - "e1272ad1-f2bd-477a-9963-1ff2094204f1"
     exp_timeout: 57600  # 16 hours
     scylla_version: "2024.2.0-rc0"
     number_of_nodes: 3
