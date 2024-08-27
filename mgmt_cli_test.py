@@ -222,10 +222,30 @@ class BackupFunctionsMixIn(LoaderUtilsMixin):
                     node.run_nodetool(node_refresh_cmd)
                     self.log.info(f"Finished node refresh, node #{index}, table - {keyspace}.{table}")
 
+    def restore_backup_outside_of_manager_v2(self, mgr_cluster, snapshot_tag, ks_tables_list, load_and_stream=False,
+                                             primary_replica_only=False, location=None, node_ids=None):
+        self.log.info("Do backup outside of Manager")
+        for index, (node, node_id) in enumerate(zip(self.db_cluster.nodes, node_ids), start=1):
+            self.log.info(f"[Node #{index}] Handling the node {node.host_id}")
+            cmd = f"scylla-manager-agent download-files -L {location} -T {snapshot_tag} -n {node_id}"
+            self.log.info(f"[Node #{index}] Downloading the backup files, cmd - {cmd}")
+            node.remoter.run(cmd)
+            self.log.info(f"[Node #{index}] Finished downloading")
+
+        for index, node in enumerate(self.db_cluster.nodes, start=1):
+            for keyspace, tables in ks_tables_list.items():
+                for table in tables:
+                    load_and_stream_flag = "--load-and-stream" if load_and_stream else ""
+                    primary_replica_only_flag = "--primary-replica-only" if primary_replica_only else ""
+                    node_refresh_cmd = f"refresh {keyspace} {table} {load_and_stream_flag} {primary_replica_only_flag}"
+                    self.log.info(f"[Node #{index}] Run node refresh cmd, table - {keyspace}.{table}")
+                    node.run_nodetool(node_refresh_cmd)
+                    self.log.info(f"[Node #{index}] Finished node refresh, table - {keyspace}.{table}")
+
     def restore_backup_from_backup_task(self, mgr_cluster, backup_task, keyspace_and_table_list):
         snapshot_tag = backup_task.get_snapshot_tag()
-        self.restore_backup_outside_of_manager(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_tag,
-                                               ks_tables_list=keyspace_and_table_list)
+        self.restore_backup_outside_of_manager_v2(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_tag,
+                                                  ks_tables_list=keyspace_and_table_list)
 
     # pylint: disable=too-many-arguments
     def verify_backup_success(self, mgr_cluster, backup_task, ks_names: list = None, tables_names: list = None,
@@ -1366,7 +1386,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
 
         if restore_outside_manager:
             self.log.info("Restoring the data outside the Manager")
-            self.restore_backup_outside_of_manager(
+            self.restore_backup_outside_of_manager_v2(
                 mgr_cluster=mgr_cluster,
                 snapshot_tag=snapshot_data.tag,
                 ks_tables_list=snapshot_data.ks_tables_map,
