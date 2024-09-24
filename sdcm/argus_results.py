@@ -88,6 +88,17 @@ class ReactorStallStatsResult(GenericResultTable):
         ]
 
 
+class ManagerRestoreBanchmarkResult(GenericResultTable):
+    class Meta:
+        name = "Restore benchmark"
+        description = "Restore benchmark"
+        Columns = [
+            ColumnMetadata(name="restore time", unit="min", type=ResultType.DURATION),
+            ColumnMetadata(name="repair time", unit="min", type=ResultType.DURATION),
+            ColumnMetadata(name="total", unit="min", type=ResultType.DURATION),
+        ]
+
+
 workload_to_table = {
     "mixed": LatencyCalculatorMixedResult,
     "write": LatencyCalculatorWriteResult,
@@ -173,17 +184,11 @@ def send_perf_simple_query_result_to_argus(argus_client: ArgusClient, result: di
 
 
 def send_manager_benchmark_results_to_argus(argus_client: ArgusClient, result: dict, sut_timestamp: int,
-                                            row_name: str = None):
+                                            row_name: str = None) -> None:
     if not row_name:
         row_name = "#1"
 
-    class RestoreResult(GenericResultTable):
-        class Meta:
-            name = f"Restore benchmark"
-            description = "Restore benchmark"
-            Columns = [ColumnMetadata(name=param, unit="", type=ResultType.FLOAT) for param in result.keys()]
-
-    result_table = RestoreResult(sut_timestamp=sut_timestamp)
+    result_table = ManagerRestoreBanchmarkResult(sut_timestamp=sut_timestamp)
     for key, value in result.items():
         result_table.add_result(column=key, row=row_name, value=value, status=Status.PASS)
     argus_client.submit_results(result_table)

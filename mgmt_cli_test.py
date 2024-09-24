@@ -1362,8 +1362,8 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
 
     def _send_restore_results_to_argus(self, task: RestoreTask, manager_version_timestamp: int,
                                        dataset_label: str = None):
-        total_restore_time = task.duration.total_seconds()
-        repair_time = task.post_restore_repair_duration.total_seconds()
+        total_restore_time = task.duration.total_seconds() / 60
+        repair_time = task.post_restore_repair_duration.total_seconds() / 60
         results = {
             "restore time": (total_restore_time - repair_time),
             "repair time": repair_time,
