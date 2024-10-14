@@ -235,11 +235,6 @@ class BackupFunctionsMixIn(LoaderUtilsMixin):
                         node.run_nodetool(f"refresh {keyspace} {table} {nodetool_refresh_extra_flags}")
                     self.log.info(f"[Node {index}][{keyspace}.{table}] Nodetool refresh took {timer.duration}")
 
-    def restore_backup_from_backup_task(self, mgr_cluster, backup_task, keyspace_and_table_list):
-        snapshot_tag = backup_task.get_snapshot_tag()
-        self.restore_backup_without_manager(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_tag,
-                                            ks_tables_list=keyspace_and_table_list)
-
     # pylint: disable=too-many-arguments
     def verify_backup_success(self, mgr_cluster, backup_task, ks_names: list = None, tables_names: list = None,
                               truncate=True, restore_data_with_task=False, timeout=None):
@@ -257,8 +252,9 @@ class BackupFunctionsMixIn(LoaderUtilsMixin):
             self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=backup_task.get_snapshot_tag(),
                                           timeout=timeout, restore_data=True)
         else:
-            self.restore_backup_from_backup_task(mgr_cluster=mgr_cluster, backup_task=backup_task,
-                                                 keyspace_and_table_list=ks_tables_map)
+            snapshot_tag = backup_task.get_snapshot_tag()
+            self.restore_backup_without_manager(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_tag,
+                                                ks_tables_list=ks_tables_map)
 
     def restore_backup_with_task(self, mgr_cluster, snapshot_tag, timeout, restore_schema=False, restore_data=False,
                                  location_list=None, extra_params=None):
