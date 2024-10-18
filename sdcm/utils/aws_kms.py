@@ -1,4 +1,3 @@
-# This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation; either version 3 of the License, or
 # (at your option) any later version.
@@ -11,13 +10,11 @@
 #
 # Copyright (c) 2023 ScyllaDB
 
-import datetime
+from itertools import cycle
 import logging
 
 import botocore
 import boto3
-
-from sdcm.utils.common import list_instances_aws
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,7 +29,7 @@ class AwsKms:
     def __init__(self, region_names):
         if not region_names:
             raise ValueError("'region_names' parameter cannot be empty")
-        self.region_names = region_names if isinstance(region_names, (list, tuple)) else [region_names]
+        self.region_names = region_names if isinstance(region_names, list) else [region_names]
         self.mapping = {
             region_name: {
                 'client': boto3.client('kms', region_name=region_name),
@@ -73,7 +70,7 @@ class AwsKms:
         if kms_keys.get("NextMarker"):
             yield from self.get_kms_keys(region_name=region_name, next_marker=kms_keys["NextMarker"])
 
-    def find_or_create_suitable_kms_keys(self, only_find=False):
+    def find_or_create_suitable_kms_keys(self):
         for region_name in self.region_names:
             if self.NUM_OF_KMS_KEYS <= len(self.mapping[region_name]['kms_key_ids']):
                 continue
@@ -90,35 +87,23 @@ class AwsKms:
                     self.mapping[region_name]['kms_key_ids'].append(current_kms_key_id)
                 if self.NUM_OF_KMS_KEYS == len(self.mapping[region_name]['kms_key_ids']):
                     break
-            if only_find:
-                continue
             while self.NUM_OF_KMS_KEYS > len(self.mapping[region_name]['kms_key_ids']):
                 self.create_kms_key(region_name)
 
     def get_next_kms_key(self, kms_key_alias_name, region_name):
-        key_alias_mapping = {}
-        for kms_key_id in self.mapping[region_name]["kms_key_ids"]:
-            current_aliases = self.mapping[region_name]["client"].list_aliases(KeyId=kms_key_id, Limit=999)["Aliases"]
-            key_alias_mapping[kms_key_id] = {"alias_names": [], "current_one": False, "alias_names_counter": 0}
-            for current_alias in current_aliases:
-                current_alias_name = current_alias["AliasName"]
-                if kms_key_alias_name == current_alias_name:
-                    key_alias_mapping[kms_key_id]["current_one"] = True
-                    # NOTE: no need to calculate aliases for the currently used KMS key
-                    break
-                key_alias_mapping[kms_key_id]["alias_names"].append(current_alias_name)
-                key_alias_mapping[kms_key_id]["alias_names_counter"] += 1
-        if not key_alias_mapping:
-            raise ValueError("No KMS keys for rotation found")
+        # Create endless KMS keys iterator
+        if kms_key_alias_name not in self.mapping[region_name]['kms_keys_aliases']:
+            self.mapping[region_name]['kms_keys_aliases'][kms_key_alias_name] = cycle(
+                self.mapping[region_name]['kms_key_ids'])
 
-        # NOTE: return KMS key that is not currently used one and has fewer aliases.
-        kms_key_id_candidate, kms_key_candidate_aliases_counter = None, 0
-        for kms_key_id, kms_key_data in key_alias_mapping.items():
-            if kms_key_data["current_one"]:
-                continue
-            if not kms_key_id_candidate or kms_key_candidate_aliases_counter > kms_key_data["alias_names_counter"]:
-                kms_key_id_candidate = kms_key_id
-                kms_key_candidate_aliases_counter = kms_key_data["alias_names_counter"]
+        kms_key_id_candidate = next(self.mapping[region_name]['kms_keys_aliases'][kms_key_alias_name])
+        # Walk through the aliases of the KMS key candidate and check that our alias is not there
+        for alias in self.mapping[region_name]['client'].list_aliases(
+                KeyId=kms_key_id_candidate, Limit=999)['Aliases']:
+            if kms_key_alias_name == alias['AliasName']:
+                # Current KMS Key candidate is already assigned to the alias, so, return another one
+                return next(self.mapping[region_name]['kms_keys_aliases'][kms_key_alias_name])
+        # Current KMS Key candidate is not assigned to the alias, use it
         return kms_key_id_candidate
 
     def create_alias(self, kms_key_alias_name, tolerate_already_exists=True):
@@ -157,64 +142,3 @@ class AwsKms:
                 LOGGER.debug(exc.response)
                 if not tolerate_errors:
                     raise
-
-    def cleanup_old_aliases(self, time_delta_h: int = 48, tolerate_errors: bool = True, dry_run=False):
-        # NOTE: since the KMS alias creation date depends on the time zone of each specific region
-        #       which may easily differ from the timezone of the caller we assume that deviation may be up to 24h.
-        #       So, if it is needed to make sure that some test must have an alias for 24h then
-        #       it is guaranteed only having margin to be '24h' -> 24 + 24 = 48h.
-        LOGGER.info("KMS: Search for aliases older than '%d' hours", time_delta_h)
-        alias_allowed_date = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=time_delta_h)
-        dry_run_prefix = "[dry-run]" if dry_run else ""
-        for region_name in self.region_names:
-            try:
-                if not self.mapping[region_name].get("kms_key_ids"):
-                    self.find_or_create_suitable_kms_keys(only_find=True)
-                kms_keys = self.mapping[region_name].get("kms_key_ids", [])
-                current_client = self.mapping[region_name]['client']
-                for kms_key_id in kms_keys:
-                    LOGGER.info("KMS: %s[region '%s'][key '%s'] read aliases", dry_run_prefix, region_name, kms_key_id)
-                    current_aliases = current_client.list_aliases(KeyId=kms_key_id, Limit=999)["Aliases"]
-                    # {'AliasName': 'alias/qa-kms-key-for-rotation-1',
-                    #  'CreationDate': datetime.datetime(2023, 8, 11, 18, 33, 12, 45000, tzinfo=tzlocal()), ... }
-                    for current_alias in current_aliases:
-                        current_alias_name = current_alias.get("AliasName", "notfound")
-                        current_alias_creation_date = current_alias.get("CreationDate")
-                        if not current_alias_name.startswith("alias/testid-"):
-                            LOGGER.info(
-                                "KMS: %s[region '%s'][key '%s'] ignore the '%s' alias as not matching",
-                                dry_run_prefix, region_name, kms_key_id, current_alias_name)
-                            continue
-                        if current_alias_creation_date < alias_allowed_date:
-                            tags_dict = {
-                                "TestId": current_alias_name.split('alias/testid-')[-1],
-                            }
-                            aws_instances = list_instances_aws(
-                                tags_dict=tags_dict, region_name=region_name, group_as_region=False)
-                            alias_is_unused = True
-                            for aws_instance in aws_instances:
-                                aws_instance_tags = {item["Key"]: item["Value"] for item in aws_instance.get("Tags")}
-                                if "db-node" in aws_instance_tags.get("Name", "N/A"):
-                                    alias_is_unused = False
-                                    break
-                            if not alias_is_unused:
-                                LOGGER.info(
-                                    "KMS: %s[region '%s'][key '%s'] Found old alias -> '%s' (%s)."
-                                    " Skip it because related DB nodes still exist.",
-                                    dry_run_prefix, region_name, kms_key_id,
-                                    current_alias_name, current_alias_creation_date)
-                                continue
-                            LOGGER.info(
-                                "KMS: %s[region '%s'][key '%s'] %s old alias -> '%s' (%s)",
-                                dry_run_prefix, region_name, kms_key_id,
-                                ("found" if dry_run else "deleting"),
-                                current_alias_name, current_alias_creation_date)
-                            if not dry_run:
-                                self.delete_alias(current_alias_name, tolerate_errors=tolerate_errors)
-            except botocore.exceptions.ClientError as exc:
-                LOGGER.info(
-                    "KMS: failed to process old aliases in the '%s' region: %s",
-                    region_name, exc.response)
-                if not tolerate_errors:
-                    raise
-        LOGGER.info("KMS: finished cleaning up old aliases")
