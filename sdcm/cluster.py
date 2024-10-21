@@ -461,14 +461,8 @@ class BaseNode(AutoSshContainerMixin):  # pylint: disable=too-many-instance-attr
                                                remote_port=LDAP_SSH_TUNNEL_LOCAL_PORT)
 
     @property
-    def vm_region(self):
-        raise NotImplementedError()
-
-    @property
     def region(self):
-        if (self.parent_cluster.params.get('simulated_regions') or 0) > 1:
-            return f"{self.vm_region}-s{self.dc_idx + 1}"
-        return self.vm_region
+        raise NotImplementedError()
 
     @property
     def host_id(self) -> str | None:
@@ -4682,25 +4676,8 @@ class BaseScyllaCluster:  # pylint: disable=too-many-public-methods, too-many-in
         if self.test_config.BACKTRACE_DECODING:
             node.install_scylla_debuginfo()
 
-        simulated_regions_num = self.params.get('simulated_regions')
-        if self.test_config.MULTI_REGION or simulated_regions_num > 1 or self.params.get('simulated_racks') > 1:
-            if simulated_regions_num > 1:
-                datacenters = [
-                    f"{self.datacenter[0]}-s{i}" for i in range(1, simulated_regions_num + 1)]  # pylint: disable=no-member
-            else:
-                datacenters = self.datacenter  # pylint: disable=no-member
-            SnitchConfig(node=node, datacenters=datacenters).apply()
-
-        if any([self.params.get('server_encrypt'), self.params.get('client_encrypt')]):
-            # Create node certificate for internode communication
-            node.create_node_certificate(cert_file=node.ssl_conf_dir / TLSAssets.DB_CERT,
-                                         cert_key=node.ssl_conf_dir / TLSAssets.DB_KEY,
-                                         csr_file=node.ssl_conf_dir / TLSAssets.DB_CSR)
-            # Create client facing node certificate, for client-to-node communication
-            node.create_node_certificate(
-                node.ssl_conf_dir / TLSAssets.DB_CLIENT_FACING_CERT, node.ssl_conf_dir / TLSAssets.DB_CLIENT_FACING_KEY)
-            for src in (CA_CERT_FILE, JKS_TRUSTSTORE_FILE):
-                shutil.copy(src, node.ssl_conf_dir)
+        if self.test_config.MULTI_REGION or self.params.get('simulated_racks') > 1:
+            SnitchConfig(node=node, datacenters=self.datacenter).apply()  # pylint: disable=no-member
         node.config_setup(append_scylla_args=self.get_scylla_args())
 
         self._scylla_post_install(node, install_scylla, nic_devname)
@@ -6060,10 +6037,6 @@ class LocalNode(BaseNode):
 
     def _refresh_instance_state(self):
         return ['127.0.0.1'], ['127.0.0.1']
-
-    @property
-    def vm_region(self):
-        return "local"
 
     @property
     def region(self):

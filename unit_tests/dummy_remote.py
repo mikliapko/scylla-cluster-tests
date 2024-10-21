@@ -61,7 +61,7 @@ class LocalNode(BaseNode):
         pass
 
     @property
-    def vm_region(self):
+    def region(self):
         return "eu-north-1"
 
     @property
