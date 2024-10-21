@@ -515,7 +515,7 @@ class BaseNode(AutoSshContainerMixin):  # pylint: disable=too-many-instance-attr
                 install_encryption_at_rest_files(self.remoter)
             for kms_host_name, kms_host_data in append_scylla_yaml.get("kms_hosts", {}).items():
                 if kms_host_data["aws_region"] == "auto":
-                    append_scylla_yaml["kms_hosts"][kms_host_name]["aws_region"] = self.vm_region
+                    append_scylla_yaml["kms_hosts"][kms_host_name]["aws_region"] = self.region
             scylla_yml.update(append_scylla_yaml)
 
         return scylla_yml
