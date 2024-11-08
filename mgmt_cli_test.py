@@ -1499,3 +1499,75 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
                                "Please provide the 'mgmt_reuse_backup_snapshot_name' parameter.")
 
         self.test_restore_from_precreated_backup(snapshot_name, restore_outside_manager=True)
+
+    def test_nemesis_restore_issue(self):
+        def choose_snapshot(snapshots_dict):
+            snapshot_groups_by_size = snapshots_dict["snapshots_sizes"]
+
+            snapshot_tag = "sm_20240812150350UTC"
+            snapshot_info = snapshot_groups_by_size[5]["snapshots"][snapshot_tag]
+            snapshot_info.update(
+                {"expected_timeout": snapshot_groups_by_size[5]["expected_timeout"],
+                 "number_of_rows": snapshot_groups_by_size[5]["number_of_rows"]})
+            return snapshot_tag, snapshot_info
+
+        def execute_data_validation_thread(command_template, keyspace_name, number_of_rows):
+            stress_queue = []
+            number_of_loaders = self.params.get("n_loaders")
+            rows_per_loader = int(number_of_rows / number_of_loaders)
+            for loader_index in range(number_of_loaders):
+                stress_command = command_template.format(num_of_rows=rows_per_loader,
+                                                         keyspace_name=keyspace_name,
+                                                         sequence_start=rows_per_loader * loader_index + 1,
+                                                         sequence_end=rows_per_loader * (loader_index + 1))
+                read_thread = self.run_stress_thread(stress_cmd=stress_command, round_robin=True,
+                                                     stop_test_on_failure=False)
+                stress_queue.append(read_thread)
+            return stress_queue
+
+        for _ in range(2):
+            mgr_cluster = self.db_cluster.get_cluster_manager()
+            cluster_backend = self.db_cluster.params.get('cluster_backend')
+            if cluster_backend == 'k8s-eks':
+                cluster_backend = 'aws'
+            persistent_manager_snapshots_dict = get_persistent_snapshots()
+            target_bucket = persistent_manager_snapshots_dict[cluster_backend]["bucket"]
+            chosen_snapshot_tag, chosen_snapshot_info = (
+                choose_snapshot(persistent_manager_snapshots_dict[cluster_backend]))
+
+            self.log.info("Restoring the keyspace %s", chosen_snapshot_info["keyspace_name"])
+            location_list = [f"{self.db_cluster.params.get('backup_bucket_backend')}:{target_bucket}"]
+            test_keyspaces = [keyspace.replace('"', '') for keyspace in self.db_cluster.get_test_keyspaces()]
+            # Keyspace names that start with a digit are surrounded by quotation marks in the output of a describe query
+            if chosen_snapshot_info["keyspace_name"] not in test_keyspaces:
+                self.log.info("Restoring the schema of the keyspace '%s'",
+                              chosen_snapshot_info["keyspace_name"])
+                restore_task = mgr_cluster.create_restore_task(restore_schema=True, location_list=location_list,
+                                                               snapshot_tag=chosen_snapshot_tag)
+
+                restore_task.wait_and_get_final_status(step=10,
+                                                       timeout=6 * 60)  # giving 6 minutes to restore the schema
+                assert restore_task.status == TaskStatus.DONE, \
+                    f'Schema restoration of {chosen_snapshot_tag} has failed!'
+
+                self.db_cluster.restart_scylla()  # After schema restoration, you should restart the nodes
+                self.set_ks_strategy_to_network_and_rf_according_to_cluster(
+                    keyspace=chosen_snapshot_info["keyspace_name"], repair_after_alter=False)
+
+            restore_task = mgr_cluster.create_restore_task(restore_data=True,
+                                                           location_list=location_list,
+                                                           snapshot_tag=chosen_snapshot_tag)
+            restore_task.wait_and_get_final_status(step=30, timeout=chosen_snapshot_info["expected_timeout"])
+            assert restore_task.status == TaskStatus.DONE, f'Data restoration of {chosen_snapshot_tag} has failed!'
+
+            confirmation_stress_template = (
+                persistent_manager_snapshots_dict)[cluster_backend]["confirmation_stress_template"]
+            stress_queue = execute_data_validation_thread(command_template=confirmation_stress_template,
+                                                          keyspace_name=chosen_snapshot_info["keyspace_name"],
+                                                          number_of_rows=chosen_snapshot_info["number_of_rows"])
+            for stress in stress_queue:
+                is_passed = self.verify_stress_thread(cs_thread_pool=stress)
+                assert is_passed, (
+                    "Data verification stress command, triggered by the 'mgmt_restore' nemesis, has failed")
+
+            time.sleep(600)
