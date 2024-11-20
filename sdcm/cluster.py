@@ -5659,7 +5659,7 @@ class BaseMonitorSet:  # pylint: disable=too-many-public-methods,too-many-instan
                     # NOTE: monitoring-4.7 expects that node export metrics are part of exactly the "node_export" job
                     if scrape_config.get("job_name", "unknown") != job_name:
                         continue
-                    if "static_configs" not in base_scrape_configs[i]:
+                    if "static_configs" not in scrape_config:
                         base_scrape_configs[i]["static_configs"] = []
                     base_scrape_configs[i]["static_configs"] += static_config_list
                     break
@@ -5769,17 +5769,18 @@ class BaseMonitorSet:  # pylint: disable=too-many-public-methods,too-many-instan
             "labels": {"dc": "sct-runner"}, "targets": [f'{normalize_ipv6_url(get_my_ip())}:9100'],
         }}
         for db_node in self.targets["db_cluster"].nodes:
-            if db_node.region not in scylla_targets_per_dc:
-                scylla_targets_per_dc[db_node.region] = []
-            if db_node.region not in node_export_targets_per_dc:
-                node_export_targets_per_dc[db_node.region] = {"labels": {"dc": db_node.region}, "targets": []}
+            region = db_node.region.strip()
+            if region not in scylla_targets_per_dc:
+                scylla_targets_per_dc[region] = []
+            if region not in node_export_targets_per_dc:
+                node_export_targets_per_dc[region] = {"labels": {"dc": region}, "targets": []}
             db_node_as_target = f"{normalize_ipv6_url(getattr(db_node, self.DB_NODES_IP_ADDRESS))}"
-            scylla_targets_per_dc[db_node.region].append(db_node_as_target)
+            scylla_targets_per_dc[region].append(db_node_as_target)
 
             # NOTE: DB host node metrics
-            node_export_targets_per_dc[db_node.region]["targets"].append(db_node_as_target)
+            node_export_targets_per_dc[region]["targets"].append(db_node_as_target)
             # NOTE: DB node syslog-ng metrics
-            node_export_targets_per_dc[db_node.region]["targets"].append(
+            node_export_targets_per_dc[region]["targets"].append(
                 f'{normalize_ipv6_url(getattr(db_node, self.DB_NODES_IP_ADDRESS))}:9577')
         # NOTE: per-dc metrics get configured like the following:
         #       genconfig.py ... -dc dc1:192.168.1.1,192.168.1.2 -dc dc2:192.168.2.1,192.168.2.2
