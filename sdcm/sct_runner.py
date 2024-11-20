@@ -494,12 +494,18 @@ class AwsSctRunner(SctRunner):
             raise ValueError(f"Unknown Image type: {image_type}")
 
         amis = aws_region.client.describe_images(
-            Owners=["self"],
+            Owners=["797456418907"],
             Filters=[
-                {"Name": "tag:Name", "Values": [self.image_name]},
-                {"Name": "tag:Version", "Values": [self.VERSION]},
+                {"Name": "name", "Values": [self.image_name]},
             ],
         )
+        # amis = aws_region.client.describe_images(
+        #     Owners=["self"],
+        #     Filters=[
+        #         {"Name": "tag:Name", "Values": ["sct-runner-1.6"]},
+        #         {"Name": "tag:Version", "Values": ["1.6"]},
+        #     ],
+        # )
         LOGGER.debug("Found SCT Runner AMIs: %s", amis)
 
         existing_amis = amis.get("Images")

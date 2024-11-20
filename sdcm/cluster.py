@@ -369,6 +369,7 @@ class BaseNode(AutoSshContainerMixin):  # pylint: disable=too-many-instance-attr
         self.log = SDCMAdapter(self.log, extra={"prefix": str(self)})
         if self.ssh_login_info:
             self.ssh_login_info["hostname"] = self.external_address
+            # self.ssh_login_info["extra_ssh_options"] = "-o 'StrictHostKeyChecking no'"
         self._init_remoter(self.ssh_login_info)
         # Start task threads after ssh is up, otherwise the dense ssh attempts from task
         # threads will make SCT builder to be blocked by sshguard of gce instance.
