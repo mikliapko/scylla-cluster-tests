@@ -1484,6 +1484,12 @@ class SCTConfiguration(dict):
         dict(name="use_dns_names", env="SCT_USE_DNS_NAMES", type=boolean,
              help="""Use dns names instead of ip addresses for nodes in cluster"""),
 
+        dict(name="SCT_AWS_ROLE_NAME", env="SCT_AWS_ROLE_NAME", type=str,
+             help="AWS role name to use for instances"),
+
+        dict(name="SCT_AWS_ACCOUNT_ID", env="SCT_AWS_ACCOUNT_ID", type=str,
+             help="AWS account id"),
+
     ]
 
     required_params = ['cluster_backend', 'test_duration', 'n_db_nodes', 'n_loaders', 'use_preinstalled_scylla',
