@@ -15,6 +15,8 @@
 # pylint: disable=too-many-lines
 
 # pylint: disable=too-many-lines
+import gzip
+import json
 import random
 from pathlib import Path
 from functools import cached_property
@@ -35,7 +37,7 @@ from sdcm.mgmt import ScyllaManagerError, TaskStatus, HostStatus, HostSsl, HostR
 from sdcm.mgmt.cli import ScyllaManagerTool, RestoreTask
 from sdcm.mgmt.common import reconfigure_scylla_manager, get_persistent_snapshots
 from sdcm.provision.helpers.certificate import TLSAssets
-from sdcm.remote import shell_script_cmd
+from sdcm.remote import LocalCmdRunner, shell_script_cmd
 from sdcm.tester import ClusterTester
 from sdcm.cluster import TestConfig
 from sdcm.nemesis import MgmtRepair
@@ -576,6 +578,29 @@ class ManagerTestFunctionsMixIn(
         if restore_schema:
             self.db_cluster.restart_scylla()  # After schema restoration, you should restart the nodes
         return restore_task
+
+    def restore_schema_manually(self, mgr_cluster, snapshot_tag: str, location: list[str], fix_region: bool = False):
+
+        schema_file = mgr_cluster.get_backup_schema_file(snapshot_tag, location[0])
+
+        local_runner = LocalCmdRunner()
+        path_on_runner = "schema.json.gz"
+        local_runner.run(f"aws s3 cp {schema_file} {path_on_runner}")
+
+        with gzip.open(path_on_runner, "rt", encoding="utf-8") as f:
+            data = json.load(f)
+            if fix_region:
+                cql_statements = [entry["cql_stmt"].replace("us-east", "eu-west") for entry in data
+                                  if "system_replicated_keys" not in entry["cql_stmt"]]
+            else:
+                cql_statements = [entry["cql_stmt"] for entry in data]
+
+        node = self.db_cluster.nodes[0]
+        with self.db_cluster.cql_connection_patient(node) as session:
+            for cql_stmt in cql_statements:
+                session.execute(cql_stmt)
+
+        self.db_cluster.restart_scylla()
 
     def create_repair_and_alter_it_with_repair_control(self):
         keyspace_to_be_repaired = "keyspace2"
@@ -1485,8 +1510,14 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
 
         self.log.info("Restoring the schema")
         location = [f"s3:{snapshot_data.bucket}"]
-        self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag, timeout=600,
-                                      restore_schema=True, location_list=location)
+        backup_cluster_region_match = False
+        if backup_cluster_region_match:
+            self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag, timeout=600,
+                                          restore_schema=True, location_list=location)
+        else:
+            self.restore_schema_manually(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag, location=location,
+                                         fix_region=True)
+
         for ks_name in snapshot_data.keyspaces:
             self.set_ks_strategy_to_network_and_rf_according_to_cluster(keyspace=ks_name, repair_after_alter=False)
 

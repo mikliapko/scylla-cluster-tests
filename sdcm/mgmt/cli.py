@@ -734,17 +734,34 @@ class ManagerCluster(ScyllaManagerBase):
         if not res:
             raise ScyllaManagerError("Unknown failure for sctool {} command".format(cmd))
 
-    def get_backup_files_dict(self, snapshot_tag, location=None, all_clusters=None):
+    def get_backup_files(self, snapshot_tag, location=None, all_clusters=None):
         location_flag = f" --location {location}" if location else ""
         all_clusters_flag = "--all-clusters" if all_clusters else ""
         command = f" -c {self.id} backup files --snapshot-tag {snapshot_tag} {location_flag} {all_clusters_flag}"
-        # The sctool backup files command prints the s3 paths of all of the files that are required to restore the
+        # The sctool backup files command prints the s3 paths of all files that are required to restore the
         # cluster from the backup
         snapshot_files = self.sctool.run(command)
-        snapshot_file_list = [file_path_list[0] for file_path_list in snapshot_files]
-        # sctool.run returns a list of lists, each of them is a 1 length list that contains the row.
+        # sctool returns a list of lists, each of them is a 1 length list that contains the row.
         # This list comprehension turns the list into a list of strings (rows) instead
+        snapshot_file_list = [file_path_list[0] for file_path_list in snapshot_files]
+        return snapshot_file_list
+
+    def get_backup_files_dict(self, snapshot_tag, location=None, all_clusters=None):
+        snapshot_file_list = self.get_backup_files(snapshot_tag, location, all_clusters)
         return self.snapshot_files_to_dict(snapshot_file_list)
+
+    def get_backup_schema_file(self, snapshot_tag: str, location: str | None = None, all_clusters: bool = True) -> str:
+        """Get the schema file (...schema_with_internals.json.gz) from the backup files list
+
+        Returns:
+            The schema file path, example:
+            s3://bucket/backup/schema/cluster/<clusterID>/task_<taskID>_tag_<snapshotTag>_schema_with_internals.json.gz
+        """
+        snapshot_file_list = self.get_backup_files(snapshot_tag, location, all_clusters)
+        for file_entry in snapshot_file_list:
+            if "schema_with_internals.json.gz" in file_entry:
+                return file_entry.split(" ")[0]
+        raise ScyllaManagerError("Schema file not found in the backup files list")
 
     @staticmethod
     def snapshot_files_to_dict(snapshot_file_lines):
