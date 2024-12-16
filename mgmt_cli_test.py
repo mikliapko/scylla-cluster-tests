@@ -1730,3 +1730,20 @@ class ManagerBackupRestoreConcurrentTests(ManagerTestFunctionsMixIn):
 
         backup_thread.join()
         read_stress_thread.join()
+
+
+class ManagerOneToOneRestore(ManagerTestFunctionsMixIn):
+    def test_one_to_one_restore(self):
+        self.log.info('starting test_one_to_one_restore')
+
+        # manager_node = self.db_cluster.siren_manager
+        # manager_tool = mgmt.get_scylla_manager_tool(manager_node=manager_node)
+        #
+        # version = manager_tool.sctool.client_version_timestamp
+        # self.log.ingo(f"Manager version is - {version}")
+
+        cluster_manager = self.db_cluster.get_cluster_manager()
+        health = cluster_manager.get_hosts_health()
+        self.log.info(health)
+
+        self.log.info('finishing test_one_to_one_restore')
