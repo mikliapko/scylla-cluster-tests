@@ -309,6 +309,8 @@ class BaseNode(AutoSshContainerMixin):  # pylint: disable=too-many-instance-attr
         self._node_rack = None
         self._is_zero_token_node = False
 
+        self.startup_script_remote_path = None
+
     def _is_node_ready_run_scylla_commands(self) -> bool:
         """
         When node is just created and started to configure, during first node initializing, it is impossible to connect to the node yet and
@@ -2910,17 +2912,19 @@ class BaseNode(AutoSshContainerMixin):  # pylint: disable=too-many-instance-attr
         return cqlsh_out if not split else list(map(str.strip, cqlsh_out.stdout.splitlines()))
 
     def run_startup_script(self):
-        startup_script_remote_path = '/tmp/sct-startup.sh'
+        if not self.startup_script_remote_path:
+            self.startup_script_remote_path = "/tmp/startup_script.sh"
 
         with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8') as tmp_file:
             tmp_file.write(self.test_config.get_startup_script())
             tmp_file.flush()
-            self.remoter.send_files(src=tmp_file.name, dst=startup_script_remote_path)  # pylint: disable=not-callable
+            self.remoter.send_files(
+                src=tmp_file.name, dst=self.startup_script_remote_path)  # pylint: disable=not-callable
 
         cmds = dedent("""
                 chmod +x {0}
                 {0}
-            """.format(startup_script_remote_path))
+            """.format(self.startup_script_remote_path))
 
         result = self.remoter.run("sudo bash -ce '%s'" % cmds)
         LOGGER.debug(result.stdout)
