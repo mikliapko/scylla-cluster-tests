@@ -1730,3 +1730,33 @@ class ManagerBackupRestoreConcurrentTests(ManagerTestFunctionsMixIn):
 
         backup_thread.join()
         read_stress_thread.join()
+
+
+class ManagerOneToOneRestore(ManagerTestFunctionsMixIn):
+    def test_one_to_one_restore(self):
+        self.log.info('starting test_one_to_one_restore')
+
+        cluster_manager = self.db_cluster.get_cluster_manager()
+
+        self.log.info("Step 1. Health check")
+        health = cluster_manager.get_hosts_health()
+        self.log.info(health)
+
+        self.log.info("Step 2. Populate the cluster with data")
+        self.generate_load_and_wait_for_results()
+
+        self.log.info("Step 3. Create backup")
+        auto_backup_task = cluster_manager.backup_task_list[0]
+        location = auto_backup_task.get_task_info_dict()["location"]
+        backup_task = cluster_manager.create_backup_task(location_list=[location])
+
+        backup_task_status = backup_task.wait_and_get_final_status(timeout=1500)
+        assert backup_task_status == TaskStatus.DONE, \
+            f"Backup task ended in {backup_task_status} instead of {TaskStatus.DONE}"
+
+        self.log.info("Step 4. Get backup details")
+        self.log.info(
+            f"Snapshot tag: {backup_task.get_snapshot_tag()}\n"
+            f"Bucket: {location}\n"
+        )
+        self.log.info('finishing test_one_to_one_restore')
