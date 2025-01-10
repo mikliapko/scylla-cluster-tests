@@ -471,12 +471,92 @@ class SnapshotOperations(ClusterTester):
             raise ValueError(f'"{self.params.get("backup_bucket_backend")}" not supported')
 
 
+class SnapshotPreparerOperations(ClusterTester):
+    ks_name_template = "{size}gb_{compaction}_{cl}_{col_size}_{col_n}_{scylla_version}"
+
+    @staticmethod
+    def get_snapshot_preparer_config() -> dict:
+        """Get the snapshot preparer configuration from the defaults/manager_snapshots_preparer_config.yaml file"""
+        path_ = "defaults/manager_snapshots_preparer_config.yaml"
+        with open(path_, encoding="utf-8") as snapshots_yaml:
+            return yaml.safe_load(snapshots_yaml)
+
+    @staticmethod
+    def _abbreviate_compaction_strategy_name(compaction_strategy: str) -> str:
+        """Abbreviate and lower compaction strategy name which comes from c-s cmd to make it more readable in ks name.
+
+        For example, LeveledCompactionStrategy -> lcs or SizeTieredCompactionStrategy -> stcs.
+        """
+        return ''.join(char for char in compaction_strategy if char.isupper()).lower()
+
+    def _build_ks_name(self, backup_size: int, cs_cmd_params: dict) -> str:
+        """Build the keyspace name based on the backup size and the parameters used in the c-s command.
+        The name should include all the parameters important for c-s read verification and can be used to
+        recreate such a command based on ks_name.
+        """
+        ks_name = self.ks_name_template.format(
+            size=backup_size,
+            compaction=self._abbreviate_compaction_strategy_name(cs_cmd_params.get("compaction")),
+            cl=cs_cmd_params.get("cl").lower(),
+            col_size=cs_cmd_params.get("col_size"),
+            col_n=cs_cmd_params.get("col_n"),
+            scylla_version=re.sub(r"[-.]", "_", self.params.get("scylla_version")),
+        )
+        return ks_name
+
+    def calculate_rows_per_loader(self, overall_rows_num: int) -> int:
+        """Calculate number of rows per loader thread based on the overall number of rows and the number of loaders."""
+        num_of_loaders = int(self.params.get("n_loaders"))
+        return int(overall_rows_num / num_of_loaders)
+
+    def build_snapshot_preparer_cs_write_cmd(self, backup_size: int) -> tuple[str, list[str]]:
+        """Build the c-s command from a template, default and overwrite parameters based on backup size.
+        Overwrite parameters are read from prepare_backup_params which should be set in Jenkins pipeline.
+
+        If overwrite params are missing, default values from defaults/manager_snapshots_preparer_config.yaml are used.
+
+        Extra params complete the missing part of command template.
+        Among them are keyspace_name, num_of_rows, sequence_start and sequence_end.
+
+        Returns:
+            - ks_name: keyspace name
+            - cs_cmds: list of c-s commands to be executed
+        """
+        overall_num_of_rows = backup_size * 1024 * 1024  # Considering 1 row = 1Kb
+        rows_per_loader = self.calculate_rows_per_loader(overall_num_of_rows)
+
+        preparer_config = self.get_snapshot_preparer_config()
+
+        default_params = {key: value for key, value in preparer_config.items() if key != "cs_cmd_template"}
+        overwrite_params = self.params.get("mgmt_snapshots_preparer_params") or {}
+        extra_params = {"num_of_rows": rows_per_loader}
+        # Defaults are overwritten by overwrite params if the latter are provided
+        params_to_use_in_cs_cmd = {**default_params, **overwrite_params, **extra_params}
+
+        ks_name = self._build_ks_name(backup_size, params_to_use_in_cs_cmd)
+        params_to_use_in_cs_cmd["ks_name"] = ks_name
+
+        cs_cmds = []
+        num_of_loaders = int(self.params.get("n_loaders"))
+        for loader_index in range(num_of_loaders):
+            # Sequence params should be defined for every loader thread separately since vary for each thread
+            params_to_use_in_cs_cmd["sequence_start"] = rows_per_loader * loader_index + 1
+            params_to_use_in_cs_cmd["sequence_end"] = rows_per_loader * (loader_index + 1)
+
+            cs_cmd_template = preparer_config.get("cs_cmd_template")
+            cs_cmd = cs_cmd_template.format(**params_to_use_in_cs_cmd)
+            cs_cmds.append(cs_cmd)
+
+        return ks_name, cs_cmds
+
+
 class ManagerTestFunctionsMixIn(
     DatabaseOperations,
     StressLoadOperations,
     ClusterOperations,
     BucketOperations,
     SnapshotOperations,
+    SnapshotPreparerOperations,
 ):
     test_config = TestConfig()
     manager_test_metrics = ManagerTestMetrics()
