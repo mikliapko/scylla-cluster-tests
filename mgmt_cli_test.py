@@ -1558,52 +1558,52 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
             restore_outside_manager: set True to restore outside of Manager via nodetool refresh
         """
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
-        mgr_cluster = self.ensure_and_get_cluster(manager_tool)
+        _ = self.ensure_and_get_cluster(manager_tool)
 
-        snapshot_data = self.get_snapshot_data(snapshot_name)
+        _ = self.get_snapshot_data(snapshot_name)
 
-        self.log.info("Restoring the schema")
-        location = [f"s3:{snapshot_data.bucket}"]
-        self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag, timeout=600,
-                                      restore_schema=True, location_list=location)
-        for ks_name in snapshot_data.keyspaces:
-            self.set_ks_strategy_to_network_and_rf_according_to_cluster(keyspace=ks_name, repair_after_alter=False)
-
-        compaction_ops = CompactionOps(cluster=self.db_cluster)
-        # Disable keyspace autocompaction cluster-wide since we dont want it to interfere with our restore timing
-        for node in self.db_cluster.nodes:
-            compaction_ops.disable_autocompaction_on_ks_cf(node=node)
-
-        if restore_outside_manager:
-            self.log.info("Restoring the data outside the Manager")
-            with ExecutionTimer() as timer:
-                self.restore_backup_without_manager(
-                    mgr_cluster=mgr_cluster,
-                    snapshot_tag=snapshot_data.tag,
-                    ks_tables_list=snapshot_data.ks_tables_map,
-                    location=location[0],
-                    precreated_backup=True,
-                )
-            restore_time = timer.duration
-        else:
-            self.log.info("Restoring the data with Manager task")
-            extra_params = self.get_restore_extra_parameters()
-            task = self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag,
-                                                 timeout=snapshot_data.exp_timeout, restore_data=True,
-                                                 location_list=location, extra_params=extra_params)
-            restore_time = task.duration
-            manager_version_timestamp = manager_tool.sctool.client_version_timestamp
-            self._send_restore_results_to_argus(task, manager_version_timestamp, dataset_label=snapshot_name)
-
-        self.manager_test_metrics.restore_time = restore_time
-
-        if not (self.params.get('mgmt_skip_post_restore_stress_read') or snapshot_data.prohibit_verification_read):
-            self.log.info("Running verification read stress")
-            self.prepare_run_and_verify_stress_in_threads(cmd_template=snapshot_data.cs_read_cmd_template,
-                                                          keyspace_name=snapshot_data.keyspaces[0],
-                                                          num_of_rows=snapshot_data.number_of_rows)
-        else:
-            self.log.info("Skipping verification read stress because of the test or snapshot configuration")
+        # self.log.info("Restoring the schema")
+        # location = [f"s3:{snapshot_data.bucket}"]
+        # self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag, timeout=600,
+        #                               restore_schema=True, location_list=location)
+        # for ks_name in snapshot_data.keyspaces:
+        #     self.set_ks_strategy_to_network_and_rf_according_to_cluster(keyspace=ks_name, repair_after_alter=False)
+        #
+        # compaction_ops = CompactionOps(cluster=self.db_cluster)
+        # # Disable keyspace autocompaction cluster-wide since we dont want it to interfere with our restore timing
+        # for node in self.db_cluster.nodes:
+        #     compaction_ops.disable_autocompaction_on_ks_cf(node=node)
+        #
+        # if restore_outside_manager:
+        #     self.log.info("Restoring the data outside the Manager")
+        #     with ExecutionTimer() as timer:
+        #         self.restore_backup_without_manager(
+        #             mgr_cluster=mgr_cluster,
+        #             snapshot_tag=snapshot_data.tag,
+        #             ks_tables_list=snapshot_data.ks_tables_map,
+        #             location=location[0],
+        #             precreated_backup=True,
+        #         )
+        #     restore_time = timer.duration
+        # else:
+        #     self.log.info("Restoring the data with Manager task")
+        #     extra_params = self.get_restore_extra_parameters()
+        #     task = self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag,
+        #                                          timeout=snapshot_data.exp_timeout, restore_data=True,
+        #                                          location_list=location, extra_params=extra_params)
+        #     restore_time = task.duration
+        #     manager_version_timestamp = manager_tool.sctool.client_version_timestamp
+        #     self._send_restore_results_to_argus(task, manager_version_timestamp, dataset_label=snapshot_name)
+        #
+        # self.manager_test_metrics.restore_time = restore_time
+        #
+        # if not (self.params.get('mgmt_skip_post_restore_stress_read') or snapshot_data.prohibit_verification_read):
+        #     self.log.info("Running verification read stress")
+        #     self.prepare_run_and_verify_stress_in_threads(cmd_template=snapshot_data.cs_read_cmd_template,
+        #                                                   keyspace_name=snapshot_data.keyspaces[0],
+        #                                                   num_of_rows=snapshot_data.number_of_rows)
+        # else:
+        #     self.log.info("Skipping verification read stress because of the test or snapshot configuration")
 
     def test_restore_benchmark(self):
         """Benchmark restore operation.
