@@ -1857,3 +1857,14 @@ class ManagerBackupRestoreConcurrentTests(ManagerTestFunctionsMixIn):
 
         backup_thread.join()
         read_stress_thread.join()
+
+
+class ManagerOneToOneRestore(ManagerTestFunctionsMixIn):
+    def test_prepare_empty_cluster(self):
+        self.log.info("Initialize Scylla Manager")
+        mgr_cluster = self.db_cluster.get_cluster_manager()
+
+        self.log.info("Define backup location")
+        auto_backup_task = mgr_cluster.backup_task_list[0]
+        location_list = [auto_backup_task.get_task_info_dict()["location"]]
+        self.log.info("Backup location - %s", location_list[0])
