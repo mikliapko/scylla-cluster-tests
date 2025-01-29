@@ -1141,18 +1141,27 @@ class ManagerHealthCheckTests(ManagerTestFunctionsMixIn):
 
 class ManagerEncryptionTests(ManagerTestFunctionsMixIn):
 
+    def _set_scylla_client_encryption(self, is_enable: bool) -> None:
+        for node in self.db_cluster.nodes:
+            with node.remote_scylla_yaml() as scylla_yml:
+                scylla_yml.client_encryption_options.enabled = is_enable
+            node.restart_scylla()
+
     def test_client_encryption(self):
         self.log.info('starting test_client_encryption')
+        # Encryption should be disabled at the beginning of the test
+        if self.db_cluster.nodes[0].is_client_encrypt:
+            self.log.info("Client encryption is enabled, disabling it ...")
+            self._set_scylla_client_encryption(is_enable=False)
+
         manager_node = self.monitors.nodes[0]
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=manager_node)
-        mgr_cluster = self.ensure_and_get_cluster(manager_tool)
+        mgr_cluster = self.ensure_and_get_cluster(manager_tool, force_add=True)
         dict_host_health = mgr_cluster.get_hosts_health()
         for host_health in dict_host_health.values():
             assert host_health.ssl == HostSsl.OFF, "Not all hosts ssl is 'OFF'"
 
-        healthcheck_task = mgr_cluster.get_healthcheck_task()
-
-        self.db_cluster.enable_client_encrypt()
+        self._set_scylla_client_encryption(is_enable=True)
 
         self.log.info("Create and send client TLS certificate/key to the manager node")
         manager_node.create_node_certificate(cert_file=manager_node.ssl_conf_dir / TLSAssets.CLIENT_CERT,
@@ -1160,20 +1169,21 @@ class ManagerEncryptionTests(ManagerTestFunctionsMixIn):
         manager_node.remoter.run(f'mkdir -p {mgmt.cli.SSL_CONF_DIR}')
         manager_node.remoter.send_files(src=str(manager_node.ssl_conf_dir) + '/', dst=str(mgmt.cli.SSL_CONF_DIR))
 
-        # SM caches scylla nodes configuration and the healthcheck svc is independent from the cache updates.
+        # SM caches scylla nodes configuration and the healthcheck svc is independent on the cache updates.
         # Cache is being updated periodically, every 1 minute following the manager config for SCT.
         # We need to wait until SM is aware about the configuration change.
         mgr_cluster.update(
             client_encrypt=True,
-            force_non_ssl_session_port=mgr_cluster.sctool.is_minimum_3_2_6_or_snapshot
+            force_non_ssl_session_port=True,
         )
-        time.sleep(90)
+        sleep_time = 90
+        self.log.debug('Sleep %s seconds, waiting for SM is aware about the configuration change', sleep_time)
+        time.sleep(sleep_time)
 
+        healthcheck_task = mgr_cluster.get_healthcheck_task()
         healthcheck_task.wait_for_status(list_status=[TaskStatus.DONE], step=5, timeout=240)
-        sleep = 40
-        self.log.debug('Sleep {} seconds, waiting for health-check task to run by schedule on first time'.format(sleep))
-        time.sleep(sleep)
         self.log.debug("Health-check task history is: {}".format(healthcheck_task.history))
+
         dict_host_health = mgr_cluster.get_hosts_health()
         for host_health in dict_host_health.values():
             assert host_health.ssl == HostSsl.ON, "Not all hosts ssl is 'ON'"
