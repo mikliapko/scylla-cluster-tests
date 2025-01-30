@@ -309,8 +309,15 @@ class ClusterOperations(ClusterTester):
         if not mgr_cluster or force_add:
             if mgr_cluster:
                 mgr_cluster.delete()
-            mgr_cluster = manager_tool.add_cluster(name=self.CLUSTER_NAME, db_cluster=self.db_cluster,
-                                                   auth_token=self.monitors.mgmt_auth_token)
+
+            is_force_non_ssl_session_port = manager_tool.is_force_non_ssl_session_port(db_cluster=self.db_cluster)
+
+            mgr_cluster = manager_tool.add_cluster(
+                name=self.CLUSTER_NAME,
+                db_cluster=self.db_cluster,
+                auth_token=self.monitors.mgmt_auth_token,
+                force_non_ssl_session_port=is_force_non_ssl_session_port,
+            )
         return mgr_cluster
 
     def get_cluster_hosts_ip(self):
@@ -1469,8 +1476,7 @@ class ManagerInstallationTests(ManagerTestFunctionsMixIn):
         self.log.info("Got Manager's version: %s", manager_tool.sctool.version)
 
         # Add cluster and verify hosts health
-        mgr_cluster = manager_tool.add_cluster(name=self.CLUSTER_NAME, db_cluster=self.db_cluster,
-                                               auth_token=self.monitors.mgmt_auth_token)
+        mgr_cluster = self.ensure_and_get_cluster(manager_tool)
         dict_host_health = mgr_cluster.get_hosts_health()
         for host_health in dict_host_health.values():
             assert host_health.status == HostStatus.UP, "Host status is not 'UP'"
