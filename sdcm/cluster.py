@@ -1930,6 +1930,8 @@ class BaseNode(AutoSshContainerMixin):  # pylint: disable=too-many-instance-attr
             if general_config:
                 manager_agent_yaml["rclone"] = general_config
 
+            manager_agent_yaml["logger"] = {"level": "debug", "sampling": None}
+
     def upgrade_manager_agent(self, scylla_mgmt_address: str, start_agent_after_upgrade: bool = True) -> None:
         self.download_scylla_manager_repo(scylla_mgmt_address)
         if self.distro.is_rhel_like:
