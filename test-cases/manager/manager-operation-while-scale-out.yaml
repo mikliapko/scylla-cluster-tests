@@ -1,0 +1,27 @@
+test_duration: 200
+# 128KB row (16 * 8192), 244GB dataset (2M rows * 128KB)
+prepare_write_cmd:  [ "cassandra-stress write cl=ALL n=500000 -schema 'replication(strategy=NetworkTopologyStrategy,replication_factor=3)' -mode cql3 native -rate threads=25 -pop seq=1..500000          -col 'n=FIXED(16) size=FIXED(8192)' -log interval=5"]
+
+stress_cmd: [ "cassandra-stress mixed cl=QUORUM duration=100m -schema 'replication(strategy=NetworkTopologyStrategy,replication_factor=3)' -mode cql3 native -rate threads=25 -pop seq=1..500000          -col 'n=FIXED(16) size=FIXED(8192)' -log interval=5"]
+
+round_robin: true
+
+n_db_nodes: 3
+add_node_cnt: 1
+cluster_target_size: 6
+n_loaders: 1
+n_monitor_nodes: 1
+
+instance_type_db: 'i4i.large'
+instance_type_loader: 'c6i.xlarge'
+
+run_fullscan: ['{"mode": "table_and_aggregate", "ks_cf": "keyspace1.standard1", "interval": 10}']
+
+nemesis_interval: 5
+nemesis_during_prepare: false
+
+user_prefix: 'manager-scale-test'
+
+use_preinstalled_scylla: true
+
+internode_compression: 'all'
