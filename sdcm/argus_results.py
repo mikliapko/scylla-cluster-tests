@@ -150,6 +150,7 @@ class ManagerSnapshotDetails(GenericResultTable):
             ColumnMetadata(name="ks_name", unit="", type=ResultType.TEXT),
             ColumnMetadata(name="cluster_id", unit="", type=ResultType.TEXT),
             ColumnMetadata(name="scylla_version", unit="", type=ResultType.TEXT),
+            ColumnMetadata(name="ear_key_id", unit="", type=ResultType.TEXT),
         ]
 
 

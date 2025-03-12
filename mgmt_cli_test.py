@@ -54,6 +54,7 @@ from sdcm.utils.compaction_ops import CompactionOps
 from sdcm.utils.gce_utils import get_gce_storage_client
 from sdcm.utils.azure_utils import AzureService
 from sdcm.utils.tablets.common import TabletsConfiguration
+from sdcm.utils.sct_cmd_helpers import get_all_regions
 from sdcm.exceptions import FilesNotCorrupted
 
 
@@ -1427,6 +1428,23 @@ class ManagerSuspendTests(ManagerTestFunctionsMixIn):
 
 class ManagerHelperTests(ManagerTestFunctionsMixIn):
 
+    def _process_cloud_key(self) -> str:
+        """The operation is required to make the particular Cloud cluster key reusable.
+        For that, the key should be replicated across regions and unlocked from original cluster.
+        """
+        key_id = self.db_cluster.get_ear_key()["keyid"]
+
+        self.log.info("Replicate the key used by Cloud cluster to different regions supported by Scylla Cloud")
+        backend = self.params.get("cluster_backend")
+        for region in get_all_regions(backend):
+            self.db_cluster.replicate_ear_key(region=region)
+
+        self.log.info("Unlock the EaR key used by cluster to reuse it in the future "
+                      "while restoring to a new cluster (1-1 restore)")
+        self.db_cluster.unlock_ear_key()
+
+        return key_id
+
     def test_prepare_backup_snapshot(self):
         """Test prepares backup snapshot for its future use in nemesis or restore benchmarks
 
@@ -1472,6 +1490,11 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
         else:
             bucket_name = location_list[0]
 
+        if is_cloud_manager:
+            key_id = self._process_cloud_key()
+        else:
+            key_id = "N/A"
+
         self.log.info("Send snapshot details to Argus")
         snapshot_details = {
             "tag": backup_task.get_snapshot_tag(),
@@ -1480,6 +1503,7 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
             "ks_name": ks_name,
             "scylla_version": self.params.get_version_based_on_conf()[0],
             "cluster_id": mgr_cluster.id,
+            "ear_key_id": key_id,
         }
         send_manager_snapshot_details_to_argus(
             argus_client=self.test_config.argus_client(),
