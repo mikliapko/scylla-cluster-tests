@@ -162,3 +162,21 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+
+  1_1_restore_1gb:
+    tag: "sm_20250313160418UTC"
+    exp_timeout: 3600  # 1 hour
+    scylla_version: "2024.2.4"
+    number_of_nodes: 3
+    prohibit_verification_read: false
+    dataset:
+      schema:
+        keyspace1:
+          - standard1: 1
+      num_of_rows: 1073760
+      compaction: "IncrementalCompactionStrategy"
+      cl: "QUORUM"
+      col_size: 1024
+      col_n: 1
+      replication: "NetworkTopologyStrategy"
+      rf: 3

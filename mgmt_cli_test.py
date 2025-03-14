@@ -1747,8 +1747,11 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
                            All snapshots are defined in the 'defaults/manager_restore_benchmark_snapshots.yaml'
             restore_outside_manager: set True to restore outside of Manager via nodetool refresh
         """
-        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
-        mgr_cluster = self.ensure_and_get_cluster(manager_tool)
+        # manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
+        # mgr_cluster = self.ensure_and_get_cluster(manager_tool)
+
+        self.log.info("Initialize Scylla Manager")
+        mgr_cluster = self.db_cluster.get_cluster_manager()
 
         snapshot_data = self.get_snapshot_data(snapshot_name)
 
@@ -1782,7 +1785,8 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
                                                  timeout=snapshot_data.exp_timeout, restore_data=True,
                                                  location_list=location, extra_params=extra_params)
             restore_time = task.duration
-            manager_version_timestamp = manager_tool.sctool.client_version_timestamp
+            # manager_version_timestamp = manager_tool.sctool.client_version_timestamp
+            manager_version_timestamp = 1726099200
             self._send_restore_results_to_argus(task, manager_version_timestamp, dataset_label=snapshot_name)
 
         self.manager_test_metrics.restore_time = restore_time
