@@ -394,7 +394,7 @@ class BucketOperations(ClusterTester):
     def sync_gs_buckets(source: str, destination: str) -> None:
         LOCALRUNNER.run(f"gsutil -m rsync -r gs://{source} gs://{destination}")
 
-    def copy_backup_snapshot_bucket(self, source: str, destination: str) -> None:
+    def copy_backup_snapshot_bucket(self, source: str, destination: str, region: str) -> None:
         """Copy bucket with Manager backup snapshots.
         The process consists of two stages - new bucket creation and data sync (original bucket -> newly created).
         The main use case is to make a copy of a bucket created in a test with Cloud (siren) cluster since siren
@@ -404,7 +404,6 @@ class BucketOperations(ClusterTester):
         Only AWS and GCE backends are supported.
         """
         cluster_backend = self.params.get("cluster_backend")
-        region = next(iter(self.params.region_names), '')
 
         if cluster_backend == "aws":
             self.create_s3_bucket(name=destination, region=region)
@@ -1483,10 +1482,16 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
 
         if is_cloud_manager:
             self.log.info("Copy bucket with snapshot since the original bucket is deleted together with cluster")
-            # from ["'AWS_US_EAST_1:s3:scylla-cloud-backup-8072-7216-v5dn53'"] to scylla-cloud-backup-8072-7216-v5dn53
-            original_bucket_name = location_list[0].split(":")[-1].rstrip("'")
-            bucket_name = original_bucket_name + "-manager-tests"
-            self.copy_backup_snapshot_bucket(source=original_bucket_name, destination=bucket_name)
+            # can be several locations for multiDC cluster, for example,
+            # 'AWS_EU_SOUTH_1:s3:scylla-cloud-backup-170-176-15c7bm,AWS_EU_WEST_1:s3:scylla-cloud-backup-170-175-9dy2w4'
+            location_list = location_list[0].split(",")
+            for location in location_list:
+                # from AWS_US_EAST_1:s3:scylla-cloud-backup-8072-7216-v5dn53' to scylla-cloud-backup-8072-7216-v5dn53
+                original_bucket_name = location.split(":")[-1].strip("'")
+                bucket_name = original_bucket_name + "-manager-tests"
+                # extract region name from AWS_US_EAST_1:s3:scylla-cloud-backup-8072-7216-v5dn53 to us-east-1
+                region = location.split(":")[0].split("_", 1)[1].replace("_", "-").lower()
+                self.copy_backup_snapshot_bucket(source=original_bucket_name, destination=bucket_name, region=region)
         else:
             bucket_name = location_list[0]
 
