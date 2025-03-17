@@ -1497,8 +1497,10 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
 
         if is_cloud_manager:
             key_id = self._process_cloud_key()
+            manager_cluster_id = self.db_cluster.get_manager_cluster_id()
         else:
             key_id = "N/A"
+            manager_cluster_id = "N/A"
 
         self.log.info("Send snapshot details to Argus")
         snapshot_details = {
@@ -1509,6 +1511,7 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
             "scylla_version": self.params.get_version_based_on_conf()[0],
             "cluster_id": mgr_cluster.id,
             "ear_key_id": key_id,
+            "manager_cluster_id": manager_cluster_id,
         }
         send_manager_snapshot_details_to_argus(
             argus_client=self.test_config.argus_client(),
