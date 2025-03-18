@@ -1492,8 +1492,6 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
                 # extract region name from AWS_US_EAST_1:s3:scylla-cloud-backup-8072-7216-v5dn53 to us-east-1
                 region = location.split(":")[0].split("_", 1)[1].replace("_", "-").lower()
                 self.copy_backup_snapshot_bucket(source=original_bucket_name, destination=bucket_name, region=region)
-        else:
-            bucket_name = location_list[0]
 
         if is_cloud_manager:
             key_id = self._process_cloud_key()
@@ -1506,7 +1504,7 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
         snapshot_details = {
             "tag": backup_task.get_snapshot_tag(),
             "size": backup_size,
-            "bucket": bucket_name,
+            "locations": ",".join(location_list),
             "ks_name": ks_name,
             "scylla_version": self.params.get_version_based_on_conf()[0],
             "cluster_id": mgr_cluster.id,
