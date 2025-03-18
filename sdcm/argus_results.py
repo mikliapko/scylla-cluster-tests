@@ -146,7 +146,7 @@ class ManagerSnapshotDetails(GenericResultTable):
         Columns = [
             ColumnMetadata(name="tag", unit="", type=ResultType.TEXT),
             ColumnMetadata(name="size", unit="GB", type=ResultType.INTEGER),
-            ColumnMetadata(name="bucket", unit="", type=ResultType.TEXT),
+            ColumnMetadata(name="locations", unit="", type=ResultType.TEXT),
             ColumnMetadata(name="ks_name", unit="", type=ResultType.TEXT),
             ColumnMetadata(name="cluster_id", unit="", type=ResultType.TEXT),
             ColumnMetadata(name="scylla_version", unit="", type=ResultType.TEXT),
