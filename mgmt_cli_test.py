@@ -54,7 +54,7 @@ from sdcm.utils.compaction_ops import CompactionOps
 from sdcm.utils.gce_utils import get_gce_storage_client
 from sdcm.utils.azure_utils import AzureService
 from sdcm.utils.tablets.common import TabletsConfiguration
-from sdcm.utils.sct_cmd_helpers import get_all_regions
+# from sdcm.utils.sct_cmd_helpers import get_all_regions
 from sdcm.exceptions import FilesNotCorrupted
 
 
@@ -1433,10 +1433,10 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
         """
         key_id = self.db_cluster.get_ear_key()["keyid"]
 
-        self.log.info("Replicate the key used by Cloud cluster to different regions supported by Scylla Cloud")
-        backend = self.params.get("cluster_backend")
-        for region in get_all_regions(backend):
-            self.db_cluster.replicate_ear_key(region=region)
+        # self.log.info("Replicate the key used by Cloud cluster to different regions supported by Scylla Cloud")
+        # backend = self.params.get("cluster_backend")
+        # for region in get_all_regions(backend):
+        #     self.db_cluster.replicate_ear_key(region=region)
 
         self.log.info("Unlock the EaR key used by cluster to reuse it in the future "
                       "while restoring to a new cluster (1-1 restore)")
