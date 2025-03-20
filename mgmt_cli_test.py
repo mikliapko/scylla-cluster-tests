@@ -1516,6 +1516,9 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
             snapshot_details=snapshot_details,
         )
 
+    def test_do_nothing(self):
+        pass
+
 
 class ManagerSanityTests(
     ManagerBackupTests,
