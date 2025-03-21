@@ -394,6 +394,20 @@ class BucketOperations(ClusterTester):
     def sync_gs_buckets(source: str, destination: str) -> None:
         LOCALRUNNER.run(f"gsutil -m rsync -r gs://{source} gs://{destination}")
 
+    def get_region_from_bucket_location(self, location: str) -> str:
+        cluster_backend = self.params.get("cluster_backend")
+
+        if cluster_backend == "aws":
+            # extract region name from AWS_US_EAST_1:s3:scylla-cloud-backup-8072-7216-v5dn53 to us-east-1
+            return location.split(":")[0].split("_", 1)[1].replace("_", "-").lower()
+        elif cluster_backend == "gce":
+            # extract region name from GCE_US_EAST_1:gcs:scylla-cloud-backup-23-29-6q0i5q to us-east1
+            parts = location.split(":")[0].split("_")[1:]
+            assert len(parts) == 3, f"Can't extract region from location {location}"
+            return f"{parts[0].lower()}-{parts[1].lower()}{parts[2]}"
+        else:
+            raise ValueError(f"Unsupported cluster backend - {cluster_backend}, should be either aws or gce")
+
     def copy_backup_snapshot_bucket(self, source: str, destination: str, region: str) -> None:
         """Copy bucket with Manager backup snapshots.
         The process consists of two stages - new bucket creation and data sync (original bucket -> newly created).
@@ -1489,8 +1503,7 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
                 # from AWS_US_EAST_1:s3:scylla-cloud-backup-8072-7216-v5dn53' to scylla-cloud-backup-8072-7216-v5dn53
                 original_bucket_name = location.split(":")[-1].strip("'")
                 bucket_name = original_bucket_name + "-manager-tests"
-                # extract region name from AWS_US_EAST_1:s3:scylla-cloud-backup-8072-7216-v5dn53 to us-east-1
-                region = location.split(":")[0].split("_", 1)[1].replace("_", "-").lower()
+                region = self.get_region_from_bucket_location(location)
                 self.copy_backup_snapshot_bucket(source=original_bucket_name, destination=bucket_name, region=region)
 
         if is_cloud_manager:
