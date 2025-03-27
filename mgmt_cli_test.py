@@ -69,6 +69,7 @@ class SnapshotData:
     """Describes the backup snapshot:
 
     - bucket: S3 bucket name
+    - location: location of the backup, takes advantage of `bucket` if provided
     - tag: snapshot tag, for example 'sm_20240816185129UTC'
     - exp_timeout: expected timeout for the restore operation
     - dataset: dict with snapshot dataset details such as cl, replication, schema, etc.
@@ -79,6 +80,7 @@ class SnapshotData:
     - node_ids: list of node ids where backup was created
     """
     bucket: str
+    location: list[str] | None
     tag: str
     exp_timeout: int
     dataset: dict[str, str | int | dict]
@@ -445,7 +447,7 @@ class SnapshotOperations(ClusterTester):
         try:
             snapshot_dict = all_snapshots_dict["sizes"][snapshot_name]
         except KeyError:
-            raise ValueError(f"Snapshot data for size '{snapshot_name}'GB was not found in the {snapshots_config} file")
+            raise ValueError(f"Snapshot data for '{snapshot_name}' was not found in the {snapshots_config} file")
 
         ks_tables_map = {}
         for ks, ts in snapshot_dict["dataset"]["schema"].items():
@@ -454,6 +456,7 @@ class SnapshotOperations(ClusterTester):
 
         snapshot_data = SnapshotData(
             bucket=all_snapshots_dict["bucket"],
+            location=snapshot_dict["location"],
             tag=snapshot_dict["tag"],
             exp_timeout=snapshot_dict["exp_timeout"],
             dataset=snapshot_dict["dataset"],
@@ -1772,17 +1775,21 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
                            All snapshots are defined in the 'defaults/manager_restore_benchmark_snapshots.yaml'
             restore_outside_manager: set True to restore outside of Manager via nodetool refresh
         """
-        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
-        mgr_cluster = self.ensure_and_get_cluster(manager_tool)
+        self.log.info("Initialize Scylla Manager")
+        mgr_cluster = self.db_cluster.get_cluster_manager()
 
         snapshot_data = self.get_snapshot_data(snapshot_name)
+        location = snapshot_data.location if snapshot_data.location else [f"s3:{snapshot_data.bucket}"]
+
+        if self.params.get("use_cloud_manager"):
+            self.log.info("Grant admin permissions to scylla_manager user")
+            self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
 
         self.log.info("Restoring the schema")
-        location = [f"s3:{snapshot_data.bucket}"]
         self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag, timeout=600,
                                       restore_schema=True, location_list=location)
-        for ks_name in snapshot_data.keyspaces:
-            self.set_ks_strategy_to_network_and_rf_according_to_cluster(keyspace=ks_name, repair_after_alter=False)
+        # for ks_name in snapshot_data.keyspaces:
+        #     self.set_ks_strategy_to_network_and_rf_according_to_cluster(keyspace=ks_name, repair_after_alter=False)
 
         # Disable keyspace auto-compaction cluster-wide since we don't want it to interfere with our restore timing
         self.disable_compaction()
@@ -1805,7 +1812,7 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
                                                  timeout=snapshot_data.exp_timeout, restore_data=True,
                                                  location_list=location, extra_params=extra_params)
             restore_time = task.duration
-            manager_version_timestamp = manager_tool.sctool.client_version_timestamp
+            manager_version_timestamp = mgr_cluster.sctool.client_version_timestamp
             self._send_restore_results_to_argus(task, manager_version_timestamp, dataset_label=snapshot_name)
 
         self.manager_test_metrics.restore_time = restore_time
