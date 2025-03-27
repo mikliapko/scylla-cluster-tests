@@ -313,6 +313,11 @@ class ClusterOperations(ClusterTester):
             dcs_names.add(data_center)
         return dcs_names
 
+    def disable_compaction(self):
+        compaction_ops = CompactionOps(cluster=self.db_cluster)
+        for node in self.db_cluster.nodes:
+            compaction_ops.disable_autocompaction_on_ks_cf(node=node)
+
 
 class BucketOperations(ClusterTester):
     backup_azure_blob_service = None
@@ -1727,10 +1732,8 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
         """
         self.run_prepare_write_cmd()
 
-        compaction_ops = CompactionOps(cluster=self.db_cluster)
-        #  Disable keyspace autocompaction cluster-wide since we dont want it to interfere with our restore timing
-        for node in self.db_cluster.nodes:
-            compaction_ops.disable_autocompaction_on_ks_cf(node=node)
+        # Disable keyspace auto-compaction cluster-wide since we don't want it to interfere with our restore timing
+        self.disable_compaction()
 
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
         mgr_cluster = self.ensure_and_get_cluster(manager_tool)
@@ -1781,10 +1784,8 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
         for ks_name in snapshot_data.keyspaces:
             self.set_ks_strategy_to_network_and_rf_according_to_cluster(keyspace=ks_name, repair_after_alter=False)
 
-        compaction_ops = CompactionOps(cluster=self.db_cluster)
-        # Disable keyspace autocompaction cluster-wide since we dont want it to interfere with our restore timing
-        for node in self.db_cluster.nodes:
-            compaction_ops.disable_autocompaction_on_ks_cf(node=node)
+        # Disable keyspace auto-compaction cluster-wide since we don't want it to interfere with our restore timing
+        self.disable_compaction()
 
         if restore_outside_manager:
             self.log.info("Restoring the data outside the Manager")
