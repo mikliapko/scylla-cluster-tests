@@ -34,7 +34,7 @@ from invoke import exceptions
 
 from argus.client.generic_result import Status
 from sdcm import mgmt
-from sdcm.argus_results import (send_manager_benchmark_results_to_argus, send_manager_snapshot_details_to_argus,
+from sdcm.argus_results import (send_manager_benchmark_results_to_argus,
                                 submit_results_to_argus, ManagerBackupReadResult, ManagerBackupBenchmarkResult)
 from sdcm.mgmt import ScyllaManagerError, TaskStatus, HostStatus, HostSsl, HostRestStatus
 from sdcm.mgmt.cli import ScyllaManagerTool, RestoreTask
@@ -1482,8 +1482,10 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
         backup_size = self.params.get("mgmt_prepare_snapshot_size")  # in Gb
         assert backup_size and backup_size >= 1, "Backup size must be at least 1Gb"
 
-        ks_name, cs_write_cmds = self.build_snapshot_preparer_cs_write_cmd(backup_size)
+        _, cs_write_cmds = self.build_snapshot_preparer_cs_write_cmd(backup_size)
         self.run_and_verify_stress_in_threads(cs_cmds=cs_write_cmds, stop_on_failure=True)
+
+        time.sleep(3600 * 2)
 
         self.log.info("Initialize Scylla Manager")
         mgr_cluster = self.db_cluster.get_cluster_manager()
@@ -1502,40 +1504,40 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
         assert backup_task_status == TaskStatus.DONE, \
             f"Backup task ended in {backup_task_status} instead of {TaskStatus.DONE}"
 
-        if is_cloud_manager:
-            self.log.info("Copy bucket with snapshot since the original bucket is deleted together with cluster")
-            # can be several locations for multiDC cluster, for example,
-            # 'AWS_EU_SOUTH_1:s3:scylla-cloud-backup-170-176-15c7bm,AWS_EU_WEST_1:s3:scylla-cloud-backup-170-175-9dy2w4'
-            location_list = location_list[0].split(",")
-            for location in location_list:
-                # from AWS_US_EAST_1:s3:scylla-cloud-backup-8072-7216-v5dn53' to scylla-cloud-backup-8072-7216-v5dn53
-                original_bucket_name = location.split(":")[-1].strip("'")
-                bucket_name = original_bucket_name + "-manager-tests"
-                region = self.get_region_from_bucket_location(location)
-                self.copy_backup_snapshot_bucket(source=original_bucket_name, destination=bucket_name, region=region)
-
-        if is_cloud_manager:
-            key_id = self._process_cloud_key()
-            manager_cluster_id = self.db_cluster.get_manager_cluster_id()
-        else:
-            key_id = "N/A"
-            manager_cluster_id = "N/A"
-
-        self.log.info("Send snapshot details to Argus")
-        snapshot_details = {
-            "tag": backup_task.get_snapshot_tag(),
-            "size": backup_size,
-            "locations": ",".join(location_list),
-            "ks_name": ks_name,
-            "scylla_version": self.params.get_version_based_on_conf()[0],
-            "cluster_id": mgr_cluster.id,
-            "ear_key_id": key_id,
-            "manager_cluster_id": manager_cluster_id,
-        }
-        send_manager_snapshot_details_to_argus(
-            argus_client=self.test_config.argus_client(),
-            snapshot_details=snapshot_details,
-        )
+        # if is_cloud_manager:
+        #     self.log.info("Copy bucket with snapshot since the original bucket is deleted together with cluster")
+        #     # can be several locations for multiDC cluster, for example,
+        #     # 'AWS_EU_SOUTH_1:s3:scylla-cloud-backup-170-176-15c7bm,AWS_EU_WEST_1:s3:scylla-cloud-backup-170-175-9dy2w4'
+        #     location_list = location_list[0].split(",")
+        #     for location in location_list:
+        #         # from AWS_US_EAST_1:s3:scylla-cloud-backup-8072-7216-v5dn53' to scylla-cloud-backup-8072-7216-v5dn53
+        #         original_bucket_name = location.split(":")[-1].strip("'")
+        #         bucket_name = original_bucket_name + "-manager-tests"
+        #         region = self.get_region_from_bucket_location(location)
+        #         self.copy_backup_snapshot_bucket(source=original_bucket_name, destination=bucket_name, region=region)
+        #
+        # if is_cloud_manager:
+        #     key_id = self._process_cloud_key()
+        #     manager_cluster_id = self.db_cluster.get_manager_cluster_id()
+        # else:
+        #     key_id = "N/A"
+        #     manager_cluster_id = "N/A"
+        #
+        # self.log.info("Send snapshot details to Argus")
+        # snapshot_details = {
+        #     "tag": backup_task.get_snapshot_tag(),
+        #     "size": backup_size,
+        #     "locations": ",".join(location_list),
+        #     "ks_name": ks_name,
+        #     "scylla_version": self.params.get_version_based_on_conf()[0],
+        #     "cluster_id": mgr_cluster.id,
+        #     "ear_key_id": key_id,
+        #     "manager_cluster_id": manager_cluster_id,
+        # }
+        # send_manager_snapshot_details_to_argus(
+        #     argus_client=self.test_config.argus_client(),
+        #     snapshot_details=snapshot_details,
+        # )
 
     def test_do_nothing(self):
         pass
