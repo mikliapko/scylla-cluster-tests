@@ -1478,13 +1478,6 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
         """
         is_cloud_manager = self.params.get("use_cloud_manager")
 
-        self.log.info("Populate the cluster with data")
-        backup_size = self.params.get("mgmt_prepare_snapshot_size")  # in Gb
-        assert backup_size and backup_size >= 1, "Backup size must be at least 1Gb"
-
-        ks_name, cs_write_cmds = self.build_snapshot_preparer_cs_write_cmd(backup_size)
-        self.run_and_verify_stress_in_threads(cs_cmds=cs_write_cmds, stop_on_failure=True)
-
         self.log.info("Initialize Scylla Manager")
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
@@ -1493,8 +1486,18 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
             # Extract location from automatically scheduled backup task
             auto_backup_task = mgr_cluster.backup_task_list[0]
             location_list = [auto_backup_task.get_task_info_dict()["location"]]
+
+            self.log.info("Delete scheduled backup task to not interfere")
+            mgr_cluster.delete_task(auto_backup_task)
         else:
             location_list = self.locations
+
+        self.log.info("Populate the cluster with data")
+        backup_size = self.params.get("mgmt_prepare_snapshot_size")  # in Gb
+        assert backup_size and backup_size >= 1, "Backup size must be at least 1Gb"
+
+        ks_name, cs_write_cmds = self.build_snapshot_preparer_cs_write_cmd(backup_size)
+        self.run_and_verify_stress_in_threads(cs_cmds=cs_write_cmds, stop_on_failure=True)
 
         self.log.info("Run backup and wait for it to finish")
         backup_task = mgr_cluster.create_backup_task(location_list=location_list, rate_limit_list=["0"])
