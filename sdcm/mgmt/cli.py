@@ -615,7 +615,7 @@ class ManagerCluster(ScyllaManagerBase):
             cmd += " --location {} ".format(locations_names)
         if snapshot_tag:
             cmd += f" --snapshot-tag {snapshot_tag}"
-        if dc_mapping:
+        if dc_mapping and restore_data:
             cmd += f" --dc-mapping {dc_mapping}"
         if extra_params:
             cmd += f" {extra_params}"
