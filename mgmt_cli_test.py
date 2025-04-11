@@ -1702,6 +1702,14 @@ class ManagerInstallationTests(ManagerTestFunctionsMixIn):
 
 class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
 
+    def tearDown(self):
+        if self.params.get("use_cloud_manager"):
+            # Unlock EaR key used by Cloud cluster to reuse it in the future
+            # Otherwise, if not unlocked, the key will be deleted together with the cluster
+            self.db_cluster.unlock_ear_key()
+
+        super().tearDown()
+
     def get_restore_extra_parameters(self) -> str:
         extra_params = self.params.get('mgmt_restore_extra_params')
         return extra_params if extra_params else None
