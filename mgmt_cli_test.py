@@ -1789,12 +1789,16 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
         self.log.info("Initialize Scylla Manager")
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
-        snapshot_data = self.get_snapshot_data(snapshot_name)
-        location = snapshot_data.location if snapshot_data.location else [f"s3:{snapshot_data.bucket}"]
-
         if self.params.get("use_cloud_manager"):
+            self.log.info("Delete scheduled backup task to not interfere")
+            auto_backup_task = mgr_cluster.backup_task_list[0]
+            mgr_cluster.delete_task(auto_backup_task)
+
             self.log.info("Grant admin permissions to scylla_manager user")
             self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+
+        snapshot_data = self.get_snapshot_data(snapshot_name)
+        location = snapshot_data.location if snapshot_data.location else [f"s3:{snapshot_data.bucket}"]
 
         self.log.info("Restoring the schema")
         self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag, timeout=600,
