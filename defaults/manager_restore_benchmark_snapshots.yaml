@@ -233,10 +233,10 @@ sizes:  # size of backed up dataset in GB
       replication: "NetworkTopologyStrategy"
       rf: 3
   1tb_1t_ics_cloud_multi:
-    tag: "sm_20250327121433UTC"
+    tag: "sm_20250411182258UTC"
     location:
-      - "AWS_EU_WEST_1:s3:scylla-cloud-backup-48-60-2kv4g3-manager-tests"
-      - "AWS_EU_WEST_2:s3:scylla-cloud-backup-48-61-3jm54b-manager-tests"
+      - "AWS_EU_WEST_1:s3:scylla-cloud-backup-102-122-8tf1m7-manager-tests"
+      - "AWS_EU_WEST_2:s3:scylla-cloud-backup-102-123-03jfj7-manager-tests"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.5"
     number_of_nodes: 6
