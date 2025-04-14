@@ -1807,7 +1807,7 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
         #     self.set_ks_strategy_to_network_and_rf_according_to_cluster(keyspace=ks_name, repair_after_alter=False)
 
         # Disable keyspace auto-compaction cluster-wide since we don't want it to interfere with our restore timing
-        self.disable_compaction()
+        # self.disable_compaction()
 
         if restore_outside_manager:
             self.log.info("Restoring the data outside the Manager")
