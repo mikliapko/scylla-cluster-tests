@@ -19,6 +19,8 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params: None
+
   500gb_1t_ics:
     tag: "sm_20240813112034UTC"
     location: None
@@ -37,6 +39,8 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params: None
+
   500gb_1t_ics_tablets:
     tag: "sm_20240813114617UTC"
     location: None
@@ -55,6 +59,8 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params: None
+
   500gb_2t_ics:
     tag: "sm_20240819203428UTC"
     location: None
@@ -75,6 +81,8 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params: None
+
   1tb_1t_ics:
     tag: "sm_20240814180009UTC"
     location: None
@@ -93,6 +101,8 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params: None
+
   1tb_4t_twcs:
     tag: "sm_20240821145503UTC"
     location: None
@@ -114,6 +124,8 @@ sizes:  # size of backed up dataset in GB
       col_n:
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params: None
+
   1tb_2t_twcs:
     tag: "sm_20240827191125UTC"
     location: None
@@ -133,6 +145,8 @@ sizes:  # size of backed up dataset in GB
       col_n:
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params: None
+
   1.5tb_2t_ics:
     tag: "sm_20240820180152UTC"
     location: None
@@ -153,6 +167,8 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params: None
+
   2tb_1t_ics:
     tag: "sm_20240816185129UTC"
     location: None
@@ -171,6 +187,7 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params: None
 
   ### Cloud (siren) managed clusters
 
@@ -193,6 +210,12 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params:
+      account_credential_id: 1001
+      buckets:
+        - "us-east-1:s3:scylla-cloud-backup-74-89-1ph7p0-manager-tests"
+      sm_cluster_id: "37299ddb-66af-4d5f-8b52-4d3b44872520"
+
   50gb_1t_ics_cloud_multi:
     tag: "sm_20250407152554UTC"
     location:
@@ -213,6 +236,13 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params:
+      account_credential_id: 1001
+      buckets:
+        - "eu-west-1:s3:scylla-cloud-backup-85-100-72z8hn-manager-tests"
+        - "eu-west-2:s3:scylla-cloud-backup-85-101-5sq81w-manager-tests"
+      sm_cluster_id: "b113c1a7-66bc-46c0-813a-bad4b49bb5a6"
+
   1tb_1t_ics_cloud_single:
     tag: "sm_20250410142519UTC"
     location:
@@ -232,6 +262,12 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params:
+      account_credential_id: 1001
+      buckets:
+        - "us-east-1:s3:scylla-cloud-backup-100-120-8gr7m6-manager-tests"
+      sm_cluster_id: "54be9444-7438-4130-9636-25307df16dae"
+
   1tb_1t_ics_cloud_single_4xlarge:
     tag: "sm_20250414221308UTC"
     location:
@@ -251,6 +287,12 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params:
+      account_credential_id: 1001
+      buckets:
+        - "us-east-1:s3:scylla-cloud-backup-110-136-78td7a-manager-tests"
+      sm_cluster_id: "7658f6ed-a1e2-4fda-8830-67ecf7cc0d82"
+
   1tb_1t_ics_cloud_multi:
     tag: "sm_20250411182258UTC"
     location:
@@ -271,3 +313,9 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    one_one_restore_params:
+      account_credential_id: 1001
+      buckets:
+        - "eu-west-1:s3:scylla-cloud-backup-102-122-8tf1m7-manager-tests"
+        - "eu-west-2:s3:scylla-cloud-backup-102-123-03jfj7-manager-tests"
+      sm_cluster_id: "0537943d-742a-4658-bd96-87df1edaf0ce"

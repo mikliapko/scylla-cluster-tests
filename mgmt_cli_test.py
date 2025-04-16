@@ -89,6 +89,7 @@ class SnapshotData:
     cs_read_cmd_template: str
     prohibit_verification_read: bool
     node_ids: list[str]
+    one_one_restore_params: dict[str, list | str] | None
 
 
 class DatabaseOperations(ClusterTester):
@@ -465,6 +466,7 @@ class SnapshotOperations(ClusterTester):
             cs_read_cmd_template=all_snapshots_dict["cs_read_cmd_template"],
             prohibit_verification_read=snapshot_dict["prohibit_verification_read"],
             node_ids=snapshot_dict.get("node_ids"),
+            one_one_restore_params=snapshot_dict["one_one_restore_params"],
         )
         return snapshot_data
 
@@ -1774,7 +1776,12 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
 
         self.run_verification_read_stress()
 
-    def test_restore_from_precreated_backup(self, snapshot_name: str, restore_outside_manager: bool = False):
+    def test_restore_from_precreated_backup(
+            self,
+            snapshot_name: str,
+            restore_outside_manager: bool = False,
+            one_to_one_restore: bool = False,
+    ):
         """The test restores the schema and data from a pre-created backup and runs the verification read stress.
         1. Define the backup to restore from
         2. Run restore schema to empty cluster
@@ -1794,15 +1801,17 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
             auto_backup_task = mgr_cluster.backup_task_list[0]
             mgr_cluster.delete_task(auto_backup_task)
 
-            self.log.info("Grant admin permissions to scylla_manager user")
-            self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+            if not one_to_one_restore:
+                self.log.info("Grant admin permissions to scylla_manager user")
+                self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
 
         snapshot_data = self.get_snapshot_data(snapshot_name)
         location = snapshot_data.location if snapshot_data.location else [f"s3:{snapshot_data.bucket}"]
 
-        self.log.info("Restoring the schema")
-        self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag, timeout=600,
-                                      restore_schema=True, location_list=location)
+        if not one_to_one_restore:
+            self.log.info("Restoring the schema")
+            self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag, timeout=600,
+                                          restore_schema=True, location_list=location)
         # for ks_name in snapshot_data.keyspaces:
         #     self.set_ks_strategy_to_network_and_rf_according_to_cluster(keyspace=ks_name, repair_after_alter=False)
 
@@ -1820,8 +1829,20 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
                     precreated_backup=True,
                 )
             restore_time = timer.duration
+        elif one_to_one_restore:
+            self.log.info("Restoring the data with 1-1 restore approach")
+            restore_params = snapshot_data.one_one_restore_params
+            with ExecutionTimer() as timer:
+                self.db_cluster.call_one_to_one_restore(
+                    sm_cluster_id=restore_params["sm_cluster_id"],
+                    buckets=",".join(restore_params["buckets"]),
+                    snapshot_tag=snapshot_data.tag,
+                    account_credential_id=restore_params["account_credential_id"],
+                    provider_id=1,
+                )
+            self.log.info(f"1-1 restore took {timer.duration} seconds")
         else:
-            self.log.info("Restoring the data with Manager task")
+            self.log.info("Restoring the data with standard L&S approach")
             extra_params = self.get_restore_extra_parameters()
             task = self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag,
                                                  timeout=snapshot_data.exp_timeout, restore_data=True,
@@ -1866,6 +1887,14 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
                                "Please provide the 'mgmt_reuse_backup_snapshot_name' parameter.")
 
         self.test_restore_from_precreated_backup(snapshot_name, restore_outside_manager=True)
+
+    def test_one_to_one_restore(self):
+        """"""
+        snapshot_name = self.params.get('mgmt_reuse_backup_snapshot_name')
+        assert snapshot_name, ("The test requires a pre-created snapshot to restore from. "
+                               "Please provide the 'mgmt_reuse_backup_snapshot_name' parameter.")
+
+        self.test_restore_from_precreated_backup(snapshot_name=snapshot_name, one_to_one_restore=True)
 
 
 class ManagerReportType(Enum):
