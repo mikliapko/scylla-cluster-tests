@@ -1840,7 +1840,8 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
                     account_credential_id=restore_params["account_credential_id"],
                     provider_id=1,
                 )
-            self.log.info(f"1-1 restore took {timer.duration} seconds")
+            restore_time = timer.duration
+            self.log.info(f"1-1 restore took {restore_time} seconds")
         else:
             self.log.info("Restoring the data with standard L&S approach")
             extra_params = self.get_restore_extra_parameters()
