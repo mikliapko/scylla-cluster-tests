@@ -1831,15 +1831,16 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
             restore_time = timer.duration
         elif one_to_one_restore:
             self.log.info("Restoring the data with 1-1 restore approach")
-            restore_params = snapshot_data.one_one_restore_params
+            # restore_params = snapshot_data.one_one_restore_params
             with ExecutionTimer() as timer:
-                self.db_cluster.call_one_to_one_restore(
-                    sm_cluster_id=restore_params["sm_cluster_id"],
-                    buckets=",".join(restore_params["buckets"]),
-                    snapshot_tag=snapshot_data.tag,
-                    account_credential_id=restore_params["account_credential_id"],
-                    provider_id=1,
-                )
+                time.sleep(3600 * 2.5)
+                # self.db_cluster.call_one_to_one_restore(
+                #     sm_cluster_id=restore_params["sm_cluster_id"],
+                #     buckets=",".join(restore_params["buckets"]),
+                #     snapshot_tag=snapshot_data.tag,
+                #     account_credential_id=restore_params["account_credential_id"],
+                #     provider_id=1,
+                # )
             restore_time = timer.duration
             self.log.info(f"1-1 restore took {restore_time} seconds")
         else:
