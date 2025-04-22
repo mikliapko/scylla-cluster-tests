@@ -1833,7 +1833,7 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
             self.log.info("Restoring the data with 1-1 restore approach")
             restore_params = snapshot_data.one_one_restore_params
             with ExecutionTimer() as timer:
-                self.db_cluster.call_one_to_one_restore(
+                self.db_cluster.run_one_to_one_restore(
                     sm_cluster_id=restore_params["sm_cluster_id"],
                     buckets=",".join(restore_params["buckets"]),
                     snapshot_tag=snapshot_data.tag,
