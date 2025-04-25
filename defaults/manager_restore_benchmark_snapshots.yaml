@@ -1,9 +1,9 @@
-bucket: "manager-backup-tests-permanent-snapshots-us-east-1"
 cs_read_cmd_template: "cassandra-stress read cl={cl} n={num_of_rows} -schema 'keyspace={keyspace_name} replication(strategy={replication},replication_factor={rf}) compaction(strategy={compaction})' -mode cql3 native -rate threads=500 -col 'size=FIXED({col_size}) n=FIXED({col_n})' -pop seq={sequence_start}..{sequence_end}"
 sizes:  # size of backed up dataset in GB
   1gb_1t_ics:
     tag: "sm_20240812100424UTC"
-    location: None
+    buckets:
+      - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 1200  # 20 minutes (timeout for restore data operation)
     scylla_version: "2024.2.0-rc1"
     number_of_nodes: 3
@@ -19,11 +19,13 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: false
     one_one_restore_params: None
 
   500gb_1t_ics:
     tag: "sm_20240813112034UTC"
-    location: None
+    buckets:
+      - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 14400  # 4 hours
     scylla_version: "2024.2.0-rc1"
     number_of_nodes: 3
@@ -39,11 +41,13 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: false
     one_one_restore_params: None
 
   500gb_1t_ics_tablets:
     tag: "sm_20240813114617UTC"
-    location: None
+    buckets:
+      - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 14400  # 4 hours
     scylla_version: "2024.2.0-rc1"
     number_of_nodes: 3
@@ -59,11 +63,13 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: false
     one_one_restore_params: None
 
   500gb_2t_ics:
     tag: "sm_20240819203428UTC"
-    location: None
+    buckets:
+      - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 14400  # 4 hours
     scylla_version: "2024.2.0-rc1"
     number_of_nodes: 3
@@ -81,11 +87,13 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: false
     one_one_restore_params: None
 
   1tb_1t_ics:
     tag: "sm_20240814180009UTC"
-    location: None
+    buckets:
+      - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.0-rc1"
     number_of_nodes: 3
@@ -101,11 +109,13 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: false
     one_one_restore_params: None
 
   1tb_4t_twcs:
     tag: "sm_20240821145503UTC"
-    location: None
+    buckets:
+      - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.0-rc1"
     number_of_nodes: 3
@@ -124,11 +134,13 @@ sizes:  # size of backed up dataset in GB
       col_n:
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: false
     one_one_restore_params: None
 
   1tb_2t_twcs:
     tag: "sm_20240827191125UTC"
-    location: None
+    buckets:
+      - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.0-rc1"
     number_of_nodes: 9
@@ -145,11 +157,13 @@ sizes:  # size of backed up dataset in GB
       col_n:
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: false
     one_one_restore_params: None
 
   1.5tb_2t_ics:
     tag: "sm_20240820180152UTC"
-    location: None
+    buckets:
+      - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 43200  # 12 hours
     scylla_version: "2024.2.0-rc1"
     number_of_nodes: 3
@@ -167,11 +181,13 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: false
     one_one_restore_params: None
 
   2tb_1t_ics:
     tag: "sm_20240816185129UTC"
-    location: None
+    buckets:
+      - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 57600  # 16 hours
     scylla_version: "2024.2.0-rc1"
     number_of_nodes: 3
@@ -187,13 +203,14 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: false
     one_one_restore_params: None
 
   ### Cloud (siren) managed clusters
 
   50gb_1t_ics_cloud_single:
     tag: "sm_20250404103340UTC"
-    location:
+    buckets:
       - "AWS_US_EAST_1:s3:scylla-cloud-backup-74-89-1ph7p0-manager-tests"
     exp_timeout: 3600  # 1 hour
     scylla_version: "2024.2.5"
@@ -210,15 +227,14 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: true
     one_one_restore_params:
       account_credential_id: 1001
-      buckets:
-        - "us-east-1:s3:scylla-cloud-backup-74-89-1ph7p0-manager-tests"
       sm_cluster_id: "37299ddb-66af-4d5f-8b52-4d3b44872520"
 
   50gb_1t_ics_cloud_multi:
     tag: "sm_20250407152554UTC"
-    location:
+    buckets:
       - "AWS_EU_WEST_1:s3:scylla-cloud-backup-85-100-72z8hn-manager-tests"
       - "AWS_EU_WEST_2:s3:scylla-cloud-backup-85-101-5sq81w-manager-tests"
     exp_timeout: 28800  # 8 hours
@@ -236,16 +252,14 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: true
     one_one_restore_params:
       account_credential_id: 1001
-      buckets:
-        - "eu-west-1:s3:scylla-cloud-backup-85-100-72z8hn-manager-tests"
-        - "eu-west-2:s3:scylla-cloud-backup-85-101-5sq81w-manager-tests"
       sm_cluster_id: "b113c1a7-66bc-46c0-813a-bad4b49bb5a6"
 
   1gb_1t_ics_cloud_single_scylla_managed_account:
     tag: "sm_20250417104739UTC"
-    location:
+    buckets:
       - "AWS_US_EAST_1:s3:scylla-cloud-backup-125-152-qxm753-manager-tests"
     exp_timeout: 3600  # 1 hour
     scylla_version: "2024.2.5"
@@ -262,15 +276,14 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: true
     one_one_restore_params:
       account_credential_id: 1
-      buckets:
-        - "us-east-1:s3:scylla-cloud-backup-125-152-qxm753-manager-tests"
       sm_cluster_id: "f9e71262-150c-4bde-a0af-104936d6cf34"
 
   50gb_1t_ics_cloud_single_scylla_managed_account:
     tag: "sm_20250325130847UTC"
-    location:
+    buckets:
       - "AWS_US_EAST_1:s3:scylla-cloud-backup-33-41-1k50da-manager-tests"
     exp_timeout: 3600  # 1 hour
     scylla_version: "2024.2.5"
@@ -287,15 +300,14 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: true
     one_one_restore_params:
       account_credential_id: 1
-      buckets:
-        - "us-east-1:s3:scylla-cloud-backup-33-41-1k50da-manager-tests"
       sm_cluster_id: "c40e205c-cb18-42ea-9a56-290dc9dce725"
 
   1tb_1t_ics_cloud_single:
     tag: "sm_20250410142519UTC"
-    location:
+    buckets:
       - "AWS_US_EAST_1:s3:scylla-cloud-backup-100-120-8gr7m6-manager-tests"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.5"
@@ -312,15 +324,14 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: true
     one_one_restore_params:
       account_credential_id: 1001
-      buckets:
-        - "us-east-1:s3:scylla-cloud-backup-100-120-8gr7m6-manager-tests"
       sm_cluster_id: "54be9444-7438-4130-9636-25307df16dae"
 
   1tb_1t_ics_cloud_single_4xlarge:
     tag: "sm_20250414221308UTC"
-    location:
+    buckets:
       - "AWS_US_EAST_1:s3:scylla-cloud-backup-110-136-78td7a-manager-tests"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.5"
@@ -337,15 +348,14 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: true
     one_one_restore_params:
       account_credential_id: 1001
-      buckets:
-        - "us-east-1:s3:scylla-cloud-backup-110-136-78td7a-manager-tests"
       sm_cluster_id: "7658f6ed-a1e2-4fda-8830-67ecf7cc0d82"
 
   1tb_1t_ics_cloud_multi:
     tag: "sm_20250411182258UTC"
-    location:
+    buckets:
       - "AWS_EU_WEST_1:s3:scylla-cloud-backup-102-122-8tf1m7-manager-tests"
       - "AWS_EU_WEST_2:s3:scylla-cloud-backup-102-123-03jfj7-manager-tests"
     exp_timeout: 28800  # 8 hours
@@ -363,16 +373,14 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: true
     one_one_restore_params:
       account_credential_id: 1001
-      buckets:
-        - "eu-west-1:s3:scylla-cloud-backup-102-122-8tf1m7-manager-tests"
-        - "eu-west-2:s3:scylla-cloud-backup-102-123-03jfj7-manager-tests"
       sm_cluster_id: "0537943d-742a-4658-bd96-87df1edaf0ce"
 
   1tb_1t_ics_cloud_multi_4xlarge:
     tag: "sm_20250415113357UTC"
-    location:
+    buckets:
       - "AWS_EU_WEST_1:s3:scylla-cloud-backup-113-139-ab9m67-manager-tests"
       - "AWS_EU_WEST_2:s3:scylla-cloud-backup-113-141-xo80f3-manager-tests"
     exp_timeout: 28800  # 8 hours
@@ -390,9 +398,7 @@ sizes:  # size of backed up dataset in GB
       col_n: 1
       replication: "NetworkTopologyStrategy"
       rf: 3
+    cloud_cluster: true
     one_one_restore_params:
       account_credential_id: 1001
-      buckets:
-        - "eu-west-1:s3:scylla-cloud-backup-113-139-ab9m67-manager-tests"
-        - "eu-west-2:s3:scylla-cloud-backup-113-141-xo80f3-manager-tests"
       sm_cluster_id: "929c53c2-725f-48ec-912f-f0b1a7629243"

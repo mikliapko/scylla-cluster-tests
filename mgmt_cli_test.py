@@ -50,11 +50,11 @@ from sdcm.utils.loader_utils import LoaderUtilsMixin
 from sdcm.utils.time_utils import ExecutionTimer
 from sdcm.sct_events.system import InfoEvent
 from sdcm.sct_events.group_common_events import ignore_no_space_errors, ignore_stream_mutation_fragments_errors
+from sdcm.utils.aws_utils import AwsIAM
 from sdcm.utils.compaction_ops import CompactionOps
 from sdcm.utils.gce_utils import get_gce_storage_client
 from sdcm.utils.azure_utils import AzureService
 from sdcm.utils.tablets.common import TabletsConfiguration
-# from sdcm.utils.sct_cmd_helpers import get_all_regions
 from sdcm.exceptions import FilesNotCorrupted
 
 
@@ -68,8 +68,7 @@ class ManagerTestMetrics:
 class SnapshotData:
     """Describes the backup snapshot:
 
-    - bucket: S3 bucket name
-    - location: location of the backup, takes advantage of `bucket` if provided
+    - buckets: S3 bucket names
     - tag: snapshot tag, for example 'sm_20240816185129UTC'
     - exp_timeout: expected timeout for the restore operation
     - dataset: dict with snapshot dataset details such as cl, replication, schema, etc.
@@ -78,9 +77,9 @@ class SnapshotData:
     - prohibit_verification_read: if True, the verification read will be prohibited. Most likely, such a backup was
       created via c-s user profile.
     - node_ids: list of node ids where backup was created
+    - one_one_restore_params: dict with parameters for 1-1 restore ('account_credential_id' and 'sm_cluster_id')
     """
-    bucket: str
-    location: list[str] | None
+    buckets: list[str]
     tag: str
     exp_timeout: int
     dataset: dict[str, str | int | dict]
@@ -89,7 +88,7 @@ class SnapshotData:
     cs_read_cmd_template: str
     prohibit_verification_read: bool
     node_ids: list[str]
-    one_one_restore_params: dict[str, list | str] | None
+    one_one_restore_params: dict[str, str | int] | None
 
 
 class DatabaseOperations(ClusterTester):
@@ -456,8 +455,7 @@ class SnapshotOperations(ClusterTester):
             ks_tables_map[ks] = t_names
 
         snapshot_data = SnapshotData(
-            bucket=all_snapshots_dict["bucket"],
-            location=snapshot_dict["location"],
+            buckets=snapshot_dict["buckets"],
             tag=snapshot_dict["tag"],
             exp_timeout=snapshot_dict["exp_timeout"],
             dataset=snapshot_dict["dataset"],
@@ -1451,16 +1449,11 @@ class ManagerSuspendTests(ManagerTestFunctionsMixIn):
 
 class ManagerHelperTests(ManagerTestFunctionsMixIn):
 
-    def _process_cloud_key(self) -> str:
+    def _unlock_cloud_key(self) -> str:
         """The operation is required to make the particular Cloud cluster key reusable.
-        For that, the key should be replicated across regions and unlocked from original cluster.
+        For that, the key should be unlocked from the original cluster.
         """
         key_id = self.db_cluster.get_ear_key()["keyid"]
-
-        # self.log.info("Replicate the key used by Cloud cluster to different regions supported by Scylla Cloud")
-        # backend = self.params.get("cluster_backend")
-        # for region in get_all_regions(backend):
-        #     self.db_cluster.replicate_ear_key(region=region)
 
         self.log.info("Unlock the EaR key used by cluster to reuse it in the future "
                       "while restoring to a new cluster (1-1 restore)")
@@ -1468,7 +1461,7 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
 
         return key_id
 
-    def test_prepare_backup_snapshot(self):
+    def test_prepare_backup_snapshot(self):  # pylint: disable=too-many-locals  # noqa: PLR0914
         """Test prepares backup snapshot for its future use in nemesis or restore benchmarks
 
         Steps:
@@ -1485,7 +1478,7 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
 
         self.log.info("Define backup location")
         if is_cloud_manager:
-            # Extract location from automatically scheduled backup task
+            # Extract location from an automatically scheduled backup task
             auto_backup_task = mgr_cluster.backup_task_list[0]
             location_list = [auto_backup_task.get_task_info_dict()["location"]]
 
@@ -1520,9 +1513,11 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
                 self.copy_backup_snapshot_bucket(source=original_bucket_name, destination=bucket_name, region=region)
 
         if is_cloud_manager:
-            key_id = self._process_cloud_key()
+            cluster_id = self.db_cluster.cloud_cluster_id
+            key_id = self._unlock_cloud_key()
             manager_cluster_id = self.db_cluster.get_manager_cluster_id()
         else:
+            cluster_id = mgr_cluster.id
             key_id = "N/A"
             manager_cluster_id = "N/A"
 
@@ -1533,7 +1528,7 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
             "locations": ",".join(location_list),
             "ks_name": ks_name,
             "scylla_version": self.params.get_version_based_on_conf()[0],
-            "cluster_id": mgr_cluster.id,
+            "cluster_id": cluster_id,
             "ear_key_id": key_id,
             "manager_cluster_id": manager_cluster_id,
         }
@@ -1541,9 +1536,6 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
             argus_client=self.test_config.argus_client(),
             snapshot_details=snapshot_details,
         )
-
-    def test_do_nothing(self):
-        pass
 
 
 class ManagerSanityTests(
@@ -1704,17 +1696,21 @@ class ManagerInstallationTests(ManagerTestFunctionsMixIn):
 
 class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
 
-    def tearDown(self):
-        if self.params.get("use_cloud_manager"):
-            # Unlock EaR key used by Cloud cluster to reuse it in the future
-            # Otherwise, if not unlocked, the key will be deleted together with the cluster
-            self.db_cluster.unlock_ear_key()
-
-        super().tearDown()
-
     def get_restore_extra_parameters(self) -> str:
         extra_params = self.params.get('mgmt_restore_extra_params')
         return extra_params if extra_params else None
+
+    def _adjust_aws_restore_policy(self, snapshot: SnapshotData, cluster_id: str) -> None:
+        assert self.params.get("use_cloud_manager"), "Should be applied to Cloud-managed clusters only"
+
+        iam_client = AwsIAM()
+        policies = iam_client.get_policy_by_name_prefix(f"s3-scylla-cloud-backup-{cluster_id}")
+        for policy_arn in policies:
+            for bucket in snapshot.buckets:
+                iam_client.add_resource_to_iam_policy(
+                    policy_arn=policy_arn,
+                    resource_to_add=f"arn:aws:s3:::{bucket.split(':')[-1]}",
+                )
 
     def _send_restore_results_to_argus(self, task: RestoreTask, manager_version_timestamp: int,
                                        dataset_label: str = None):
@@ -1776,13 +1772,9 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
 
         self.run_verification_read_stress()
 
-    def test_restore_from_precreated_backup(
-            self,
-            snapshot_name: str,
-            restore_outside_manager: bool = False,
-            one_to_one_restore: bool = False,
-    ):
+    def test_restore_from_precreated_backup(self, snapshot_name: str, restore_outside_manager: bool = False):
         """The test restores the schema and data from a pre-created backup and runs the verification read stress.
+        0. For Cloud(Siren)-managed clusters, delete scheduled backup task
         1. Define the backup to restore from
         2. Run restore schema to empty cluster
         3. Run restore data
@@ -1796,27 +1788,24 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
         self.log.info("Initialize Scylla Manager")
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
+        self.log.info("Define snapshot details and location")
+        snapshot_data = self.get_snapshot_data(snapshot_name)
+        locations = snapshot_data.buckets
+
         if self.params.get("use_cloud_manager"):
             self.log.info("Delete scheduled backup task to not interfere")
             auto_backup_task = mgr_cluster.backup_task_list[0]
             mgr_cluster.delete_task(auto_backup_task)
 
-            if not one_to_one_restore:
-                self.log.info("Grant admin permissions to scylla_manager user")
-                self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+            self.log.info("Adjust restore cluster backup policy")
+            self._adjust_aws_restore_policy(snapshot_data, cluster_id=self.db_cluster.cloud_cluster_id)
 
-        snapshot_data = self.get_snapshot_data(snapshot_name)
-        location = snapshot_data.location if snapshot_data.location else [f"s3:{snapshot_data.bucket}"]
+            self.log.info("Grant admin permissions to scylla_manager user")
+            self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
 
-        if not one_to_one_restore:
-            self.log.info("Restoring the schema")
-            self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag, timeout=600,
-                                          restore_schema=True, location_list=location)
-        # for ks_name in snapshot_data.keyspaces:
-        #     self.set_ks_strategy_to_network_and_rf_according_to_cluster(keyspace=ks_name, repair_after_alter=False)
-
-        # Disable keyspace auto-compaction cluster-wide since we don't want it to interfere with our restore timing
-        # self.disable_compaction()
+        self.log.info("Restoring the schema")
+        self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag, timeout=600,
+                                      restore_schema=True, location_list=locations)
 
         if restore_outside_manager:
             self.log.info("Restoring the data outside the Manager")
@@ -1825,29 +1814,16 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
                     mgr_cluster=mgr_cluster,
                     snapshot_tag=snapshot_data.tag,
                     ks_tables_list=snapshot_data.ks_tables_map,
-                    location=location[0],
+                    location=locations[0],
                     precreated_backup=True,
                 )
             restore_time = timer.duration
-        elif one_to_one_restore:
-            self.log.info("Restoring the data with 1-1 restore approach")
-            restore_params = snapshot_data.one_one_restore_params
-            with ExecutionTimer() as timer:
-                self.db_cluster.run_one_to_one_restore(
-                    sm_cluster_id=restore_params["sm_cluster_id"],
-                    buckets=",".join(restore_params["buckets"]),
-                    snapshot_tag=snapshot_data.tag,
-                    account_credential_id=restore_params["account_credential_id"],
-                    provider_id=1,
-                )
-            restore_time = timer.duration
-            self.log.info(f"1-1 restore took {restore_time} seconds")
         else:
             self.log.info("Restoring the data with standard L&S approach")
             extra_params = self.get_restore_extra_parameters()
             task = self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_data.tag,
                                                  timeout=snapshot_data.exp_timeout, restore_data=True,
-                                                 location_list=location, extra_params=extra_params)
+                                                 location_list=locations, extra_params=extra_params)
             restore_time = task.duration
             manager_version_timestamp = mgr_cluster.sctool.client_version_timestamp
             self._send_restore_results_to_argus(task, manager_version_timestamp, dataset_label=snapshot_name)
@@ -1889,13 +1865,65 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
 
         self.test_restore_from_precreated_backup(snapshot_name, restore_outside_manager=True)
 
+
+class ManagerOneToOneRestore(ManagerTestFunctionsMixIn):
+    """The class contains tests and test methods for one-to-one restore functionality.
+    In current shape, 1-1 restore is supposed to be used for Scylla Cloud clusters only.
+    So, the test is not applicable for on-prem clusters used for regular Manager SCT tests.
+    """
+
+    def setUp(self):
+        if not self.params.get("use_cloud_manager"):
+            raise ValueError("The test is applicable only for Scylla Cloud clusters")
+        super().setUp()
+
+    def tearDown(self):
+        """Unlock EaR key used by Cloud cluster to reuse it in the future
+        Otherwise, if not unlocked, the key will be deleted together with the cluster
+        """
+        self.db_cluster.unlock_ear_key()
+        super().tearDown()
+
+    def _define_cloud_provider_id(self) -> int:
+        cluster_backend = self.params.get("cluster_backend")
+        if cluster_backend == "aws":
+            return 1
+        elif cluster_backend == "gce":
+            return 2
+        else:
+            raise ValueError("Unsupported cloud provider")
+
     def test_one_to_one_restore(self):
-        """"""
+        self.log.info("Get snapshot details")
         snapshot_name = self.params.get('mgmt_reuse_backup_snapshot_name')
         assert snapshot_name, ("The test requires a pre-created snapshot to restore from. "
-                               "Please provide the 'mgmt_reuse_backup_snapshot_name' parameter.")
+                               "Please, provide the 'mgmt_reuse_backup_snapshot_name' parameter.")
+        snapshot_data = self.get_snapshot_data(snapshot_name)
 
-        self.test_restore_from_precreated_backup(snapshot_name=snapshot_name, one_to_one_restore=True)
+        self.log.info("Initialize Scylla Manager")
+        mgr_cluster = self.db_cluster.get_cluster_manager()
+
+        self.log.info("Delete scheduled backup task to not interfere")
+        auto_backup_task = mgr_cluster.backup_task_list[0]
+        mgr_cluster.delete_task(auto_backup_task)
+
+        self.log.info("Run 1-1 restore")
+        with ExecutionTimer() as timer:
+            self.db_cluster.run_one_to_one_restore(
+                sm_cluster_id=snapshot_data.one_one_restore_params["sm_cluster_id"],
+                buckets=",".join(snapshot_data.buckets),
+                snapshot_tag=snapshot_data.tag,
+                account_credential_id=snapshot_data.one_one_restore_params["account_credential_id"],
+                provider_id=self._define_cloud_provider_id(),
+            )
+        self.log.info(f"1-1 restore took {timer.duration} seconds")
+
+        if not (self.params.get('mgmt_skip_post_restore_stress_read') or snapshot_data.prohibit_verification_read):
+            self.log.info("Running verification read stress")
+            cs_verify_cmds = self.build_cs_read_cmd_from_snapshot_details(snapshot_data)
+            self.run_and_verify_stress_in_threads(cs_cmds=cs_verify_cmds)
+        else:
+            self.log.info("Skipping verification read stress because of the test or snapshot configuration")
 
 
 class ManagerReportType(Enum):
