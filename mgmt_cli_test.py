@@ -68,8 +68,8 @@ class ManagerTestMetrics:
 class SnapshotData:
     """Describes the backup snapshot:
 
-    - buckets: S3 bucket names
-    - tag: snapshot tag, for example 'sm_20240816185129UTC'
+    - locations: backup locations
+    - tag: snapshot tag, for example, 'sm_20240816185129UTC'
     - exp_timeout: expected timeout for the restore operation
     - dataset: dict with snapshot dataset details such as cl, replication, schema, etc.
     - keyspaces: list of keyspaces presented in backup
@@ -79,7 +79,7 @@ class SnapshotData:
     - node_ids: list of node ids where backup was created
     - one_one_restore_params: dict with parameters for 1-1 restore ('account_credential_id' and 'sm_cluster_id')
     """
-    buckets: list[str]
+    locations: list[str]
     tag: str
     exp_timeout: int
     dataset: dict[str, str | int | dict]
@@ -455,7 +455,7 @@ class SnapshotOperations(ClusterTester):
             ks_tables_map[ks] = t_names
 
         snapshot_data = SnapshotData(
-            buckets=snapshot_dict["buckets"],
+            locations=snapshot_dict["locations"],
             tag=snapshot_dict["tag"],
             exp_timeout=snapshot_dict["exp_timeout"],
             dataset=snapshot_dict["dataset"],
@@ -1790,7 +1790,7 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
 
         self.log.info("Define snapshot details and location")
         snapshot_data = self.get_snapshot_data(snapshot_name)
-        locations = snapshot_data.buckets
+        locations = snapshot_data.locations
 
         if self.params.get("use_cloud_manager"):
             self.log.info("Delete scheduled backup task to not interfere")
@@ -1873,9 +1873,9 @@ class ManagerOneToOneRestore(ManagerTestFunctionsMixIn):
     """
 
     def setUp(self):
+        super().setUp()
         if not self.params.get("use_cloud_manager"):
             raise ValueError("The test is applicable only for Scylla Cloud clusters")
-        super().setUp()
 
     def tearDown(self):
         """Unlock EaR key used by Cloud cluster to reuse it in the future
@@ -1908,10 +1908,17 @@ class ManagerOneToOneRestore(ManagerTestFunctionsMixIn):
         mgr_cluster.delete_task(auto_backup_task)
 
         self.log.info("Run 1-1 restore")
+        # Siren cli requires locations to be sent in a format different from the one used in the Manager
+        # Thus, all locations should be reformatted from "AWS_US_EAST_1:s3:bucket_name" to "us-east-1:s3:bucket_name"
+        locations = []
+        for location in snapshot_data.locations:
+            dc_prefix = "-".join(location.split(":")[0].split("_")[1:]).lower()
+            locations.append(dc_prefix + location.split(":", 1)[1])
+
         with ExecutionTimer() as timer:
             self.db_cluster.run_one_to_one_restore(
                 sm_cluster_id=snapshot_data.one_one_restore_params["sm_cluster_id"],
-                buckets=",".join(snapshot_data.buckets),
+                buckets=",".join(locations),
                 snapshot_tag=snapshot_data.tag,
                 account_credential_id=snapshot_data.one_one_restore_params["account_credential_id"],
                 provider_id=self._define_cloud_provider_id(),

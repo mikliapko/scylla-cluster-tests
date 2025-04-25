@@ -2,7 +2,7 @@ cs_read_cmd_template: "cassandra-stress read cl={cl} n={num_of_rows} -schema 'ke
 sizes:  # size of backed up dataset in GB
   1gb_1t_ics:
     tag: "sm_20240812100424UTC"
-    buckets:
+    locations:
       - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 1200  # 20 minutes (timeout for restore data operation)
     scylla_version: "2024.2.0-rc1"
@@ -24,7 +24,7 @@ sizes:  # size of backed up dataset in GB
 
   500gb_1t_ics:
     tag: "sm_20240813112034UTC"
-    buckets:
+    locations:
       - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 14400  # 4 hours
     scylla_version: "2024.2.0-rc1"
@@ -46,7 +46,7 @@ sizes:  # size of backed up dataset in GB
 
   500gb_1t_ics_tablets:
     tag: "sm_20240813114617UTC"
-    buckets:
+    locations:
       - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 14400  # 4 hours
     scylla_version: "2024.2.0-rc1"
@@ -68,7 +68,7 @@ sizes:  # size of backed up dataset in GB
 
   500gb_2t_ics:
     tag: "sm_20240819203428UTC"
-    buckets:
+    locations:
       - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 14400  # 4 hours
     scylla_version: "2024.2.0-rc1"
@@ -92,7 +92,7 @@ sizes:  # size of backed up dataset in GB
 
   1tb_1t_ics:
     tag: "sm_20240814180009UTC"
-    buckets:
+    locations:
       - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.0-rc1"
@@ -114,7 +114,7 @@ sizes:  # size of backed up dataset in GB
 
   1tb_4t_twcs:
     tag: "sm_20240821145503UTC"
-    buckets:
+    locations:
       - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.0-rc1"
@@ -139,7 +139,7 @@ sizes:  # size of backed up dataset in GB
 
   1tb_2t_twcs:
     tag: "sm_20240827191125UTC"
-    buckets:
+    locations:
       - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.0-rc1"
@@ -162,7 +162,7 @@ sizes:  # size of backed up dataset in GB
 
   1.5tb_2t_ics:
     tag: "sm_20240820180152UTC"
-    buckets:
+    locations:
       - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 43200  # 12 hours
     scylla_version: "2024.2.0-rc1"
@@ -186,7 +186,7 @@ sizes:  # size of backed up dataset in GB
 
   2tb_1t_ics:
     tag: "sm_20240816185129UTC"
-    buckets:
+    locations:
       - "s3:manager-backup-tests-permanent-snapshots-us-east-1"
     exp_timeout: 57600  # 16 hours
     scylla_version: "2024.2.0-rc1"
@@ -210,7 +210,7 @@ sizes:  # size of backed up dataset in GB
 
   50gb_1t_ics_cloud_single:
     tag: "sm_20250404103340UTC"
-    buckets:
+    locations:
       - "AWS_US_EAST_1:s3:scylla-cloud-backup-74-89-1ph7p0-manager-tests"
     exp_timeout: 3600  # 1 hour
     scylla_version: "2024.2.5"
@@ -234,7 +234,7 @@ sizes:  # size of backed up dataset in GB
 
   50gb_1t_ics_cloud_multi:
     tag: "sm_20250407152554UTC"
-    buckets:
+    locations:
       - "AWS_EU_WEST_1:s3:scylla-cloud-backup-85-100-72z8hn-manager-tests"
       - "AWS_EU_WEST_2:s3:scylla-cloud-backup-85-101-5sq81w-manager-tests"
     exp_timeout: 28800  # 8 hours
@@ -259,7 +259,7 @@ sizes:  # size of backed up dataset in GB
 
   1gb_1t_ics_cloud_single_scylla_managed_account:
     tag: "sm_20250417104739UTC"
-    buckets:
+    locations:
       - "AWS_US_EAST_1:s3:scylla-cloud-backup-125-152-qxm753-manager-tests"
     exp_timeout: 3600  # 1 hour
     scylla_version: "2024.2.5"
@@ -283,7 +283,7 @@ sizes:  # size of backed up dataset in GB
 
   50gb_1t_ics_cloud_single_scylla_managed_account:
     tag: "sm_20250325130847UTC"
-    buckets:
+    locations:
       - "AWS_US_EAST_1:s3:scylla-cloud-backup-33-41-1k50da-manager-tests"
     exp_timeout: 3600  # 1 hour
     scylla_version: "2024.2.5"
@@ -307,7 +307,7 @@ sizes:  # size of backed up dataset in GB
 
   1tb_1t_ics_cloud_single:
     tag: "sm_20250410142519UTC"
-    buckets:
+    locations:
       - "AWS_US_EAST_1:s3:scylla-cloud-backup-100-120-8gr7m6-manager-tests"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.5"
@@ -331,7 +331,7 @@ sizes:  # size of backed up dataset in GB
 
   1tb_1t_ics_cloud_single_4xlarge:
     tag: "sm_20250414221308UTC"
-    buckets:
+    locations:
       - "AWS_US_EAST_1:s3:scylla-cloud-backup-110-136-78td7a-manager-tests"
     exp_timeout: 28800  # 8 hours
     scylla_version: "2024.2.5"
@@ -355,7 +355,7 @@ sizes:  # size of backed up dataset in GB
 
   1tb_1t_ics_cloud_multi:
     tag: "sm_20250411182258UTC"
-    buckets:
+    locations:
       - "AWS_EU_WEST_1:s3:scylla-cloud-backup-102-122-8tf1m7-manager-tests"
       - "AWS_EU_WEST_2:s3:scylla-cloud-backup-102-123-03jfj7-manager-tests"
     exp_timeout: 28800  # 8 hours
@@ -380,7 +380,7 @@ sizes:  # size of backed up dataset in GB
 
   1tb_1t_ics_cloud_multi_4xlarge:
     tag: "sm_20250415113357UTC"
-    buckets:
+    locations:
       - "AWS_EU_WEST_1:s3:scylla-cloud-backup-113-139-ab9m67-manager-tests"
       - "AWS_EU_WEST_2:s3:scylla-cloud-backup-113-141-xo80f3-manager-tests"
     exp_timeout: 28800  # 8 hours
