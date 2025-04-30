@@ -191,6 +191,29 @@ sizes:  # size of backed up dataset in GB
 
   ### Cloud(Siren) cluster backups
 
+  1gb_1t_ics_cloud_single_scylla_managed:
+    tag: "sm_20250430122620UTC"
+    locations:
+      - "AWS_US_EAST_1:s3:scylla-cloud-backup-184-214-9xk4d8-manager-tests"
+    exp_timeout: 3600  # 1 hour
+    scylla_version: "2025.1.1"
+    number_of_nodes: 3
+    prohibit_verification_read: false
+    dataset:
+      schema:
+        "1gb_ics_quorum_1024_1_2025_1_1":
+          - standard1: 1
+      num_of_rows: 1048576
+      compaction: "IncrementalCompactionStrategy"
+      cl: "QUORUM"
+      col_size: 1024
+      col_n: 1
+      replication: "NetworkTopologyStrategy"
+      rf: 3
+    one_one_restore_params:
+      account_credential_id: 1
+      sm_cluster_id: "427089eb-0213-4bd5-b6db-fdc8bf4d2d28"
+
   50gb_1t_ics_cloud_single:
     tag: "sm_20250404103340UTC"
     locations:
