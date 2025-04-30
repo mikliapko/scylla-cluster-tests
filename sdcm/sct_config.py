@@ -1219,6 +1219,10 @@ class SCTConfiguration(dict):
              env="SCT_MGMT_SNAPSHOTS_PREPARER_PARAMS", type=dict_or_str,
              help="Custom parameters of c-s write operation used in snapshots preparer"),
 
+        dict(name="one_one_restore_cluster_bootstrap_time",
+             env="SCT_ONE_ONE_RESTORE_CLUSTER_BOOTSTRAP_TIME", type=int,
+             help="Time in seconds it took Siren 1-1 restore cluster to bootstrap"),
+
         # PerformanceRegressionTest
 
         dict(name="stress_cmd_w", env="SCT_STRESS_CMD_W",

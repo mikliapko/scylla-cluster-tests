@@ -14,6 +14,7 @@ import json
 import logging
 import time
 from datetime import timezone, datetime
+from typing import Literal
 
 from argus.client import ArgusClient
 from argus.client.base import ArgusClientError
@@ -103,8 +104,8 @@ class ReactorStallStatsResult(GenericResultTable):
 
 class ManagerRestoreBanchmarkResult(GenericResultTable):
     class Meta:
-        name = "Restore benchmark"
-        description = "Restore benchmark"
+        name = "Regular L&S restore benchmark"
+        description = "Regular L&S restore benchmark"
         Columns = [
             ColumnMetadata(name="restore time", unit="s", type=ResultType.DURATION, higher_is_better=False),
             ColumnMetadata(name="download bandwidth", unit="MiB/s/shard", type=ResultType.FLOAT, higher_is_better=True),
@@ -119,6 +120,17 @@ class ManagerRestoreBanchmarkResult(GenericResultTable):
             "repair time": ValidationRule(best_pct=10),
             "total": ValidationRule(best_pct=10),
         }
+
+
+class ManagerOneOneRestoreBenchmarkResult(GenericResultTable):
+    class Meta:
+        name = "1-1 restore benchmark"
+        description = "1-1 restore benchmark"
+        Columns = [
+            ColumnMetadata(name="bootstrap time", unit="s", type=ResultType.DURATION),
+            ColumnMetadata(name="restore time", unit="s", type=ResultType.DURATION),
+            ColumnMetadata(name="total", unit="s", type=ResultType.DURATION),
+        ]
 
 
 class ManagerBackupBenchmarkResult(GenericResultTable):
@@ -265,12 +277,22 @@ def send_perf_simple_query_result_to_argus(argus_client: ArgusClient, result: di
     submit_results_to_argus(argus_client, result_table)
 
 
-def send_manager_benchmark_results_to_argus(argus_client: ArgusClient, result: dict, sut_timestamp: int,
-                                            row_name: str = None) -> None:
+def send_manager_benchmark_results_to_argus(argus_client: ArgusClient,
+                                            result: dict,
+                                            sut_timestamp: int = 0,
+                                            row_name: str = None,
+                                            report_type: Literal["regular", "one_to_one"] = "regular") -> None:
     if not row_name:
         row_name = "#1"
 
-    result_table = ManagerRestoreBanchmarkResult(sut_timestamp=sut_timestamp)
+    match report_type:
+        case "regular":
+            result_table = ManagerRestoreBanchmarkResult(sut_timestamp=sut_timestamp)
+        case "one_to_one":
+            result_table = ManagerOneOneRestoreBenchmarkResult()
+        case _:
+            raise ValueError(f"Invalid report type: {report_type}. Expected 'regular' or 'one_to_one'")
+
     for key, value in result.items():
         result_table.add_result(column=key, row=row_name, value=value, status=Status.UNSET)
     submit_results_to_argus(argus_client, result_table)
