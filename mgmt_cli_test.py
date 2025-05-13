@@ -1945,7 +1945,10 @@ class ManagerOneToOneRestore(ManagerTestFunctionsMixIn):
         # Thus, all locations should be reformatted from "AWS_US_EAST_1:s3:bucket_name" to "us-east-1:s3:bucket_name"
         locations = []
         for location in snapshot_data.locations:
-            dc_prefix = "-".join(location.split(":")[0].split("_")[1:]).lower()
+            if self._define_cloud_provider_id() == 1:
+                dc_prefix = "-".join(location.split(":")[0].split("_")[1:]).lower()
+            else:
+                dc_prefix = location.split(":")[0].replace("_", "-").lower()
             locations.append(dc_prefix + ":" + location.split(":", 1)[1])
 
         with ExecutionTimer() as timer:
