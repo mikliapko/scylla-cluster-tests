@@ -34,7 +34,7 @@ from argus.client.generic_result import Status
 from sdcm import mgmt
 from sdcm.argus_results import (send_manager_benchmark_results_to_argus, send_manager_snapshot_details_to_argus,
                                 submit_results_to_argus, ManagerBackupReadResult, ManagerBackupBenchmarkResult)
-from sdcm.mgmt import ScyllaManagerError, TaskStatus, HostStatus, HostSsl, HostRestStatus
+from sdcm.mgmt import AnyManagerCluster, ScyllaManagerError, TaskStatus, HostStatus, HostSsl, HostRestStatus
 from sdcm.mgmt.cli import ScyllaManagerTool, RestoreTask
 from sdcm.mgmt.common import reconfigure_scylla_manager, get_persistent_snapshots
 from sdcm.provision.helpers.certificate import TLSAssets
@@ -301,6 +301,19 @@ class ClusterOperations(ClusterTester):
         nodetool_status = self.db_cluster.get_nodetool_status(self.db_cluster.nodes[0])
         rf = {dc_name: len(nodes) for dc_name, nodes in nodetool_status.items()}
         return rf
+
+    def delete_cluster_from_manager(self, mgr_cluster: AnyManagerCluster, skip_cloud_cluster: bool = True) -> None:
+        """Deletes a cluster from the Scylla Manager.
+
+        Args:
+            mgr_cluster (AnyManagerCluster): The Manager cluster object.
+            skip_cloud_cluster (bool): If True, skips deletion for cloud clusters. Defaults to True.
+        """
+        if skip_cloud_cluster and self.params.get("use_cloud_manager"):
+            self.log.debug("Skipping deletion from Manager for Cloud cluster")
+            return
+        else:
+            mgr_cluster.delete()
 
 
 class BucketOperations(ClusterTester):
@@ -626,18 +639,26 @@ class ManagerTestFunctionsMixIn(
 
     @cached_property
     def locations(self) -> list[str]:
-        backend = self.params.get("backup_bucket_backend")
-        region = next(iter(self.params.region_names), '')
-        bucket_locations = self.params.get("backup_bucket_location")
+        if self.params.get("use_cloud_manager"):
+            mgr_cluster = self.db_cluster.get_cluster_manager()
+            # Extract location from automatically scheduled backup task
+            auto_backup_task = mgr_cluster.backup_task_list[0]
+            location_list = [auto_backup_task.get_task_info_dict()["location"]]
+        else:  # Regular SCT cluster
+            backend = self.params.get("backup_bucket_backend")
+            region = next(iter(self.params.region_names), '')
+            bucket_locations = self.params.get("backup_bucket_location")
 
-        buckets = (
-            [bucket.format(region=region) for bucket in bucket_locations]
-            if isinstance(bucket_locations, list)
-            else bucket_locations.format(region=region).split()
-        )
+            buckets = (
+                [bucket.format(region=region) for bucket in bucket_locations]
+                if isinstance(bucket_locations, list)
+                else bucket_locations.format(region=region).split()
+            )
 
-        # FIXME: Make it works with multiple locations or file a bug for scylla-manager.
-        return [f"{backend}:{location}" for location in buckets[:1]]
+            # FIXME: Make it works with multiple locations or file a bug for scylla-manager.
+            location_list = [f"{backend}:{location}" for location in buckets[:1]]
+
+        return location_list
 
     def get_dc_mapping(self) -> str | None:
         """Get the datacenter mapping string for the restore task if there are > 1 DCs (multiDC) in the cluster.
@@ -822,7 +843,7 @@ class ManagerRestoreTests(ManagerTestFunctionsMixIn):
             self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, ks_names=ks_names,
                                        restore_data_with_task=True, timeout=hard_timeout)
         self.run_verification_read_stress(ks_names)
-        mgr_cluster.delete()  # remove cluster at the end of the test
+        self.delete_cluster_from_manager(mgr_cluster=mgr_cluster)  # remove cluster at the end of the test
         self.log.info('finishing test_restore_backup_with_task')
 
 
@@ -837,7 +858,7 @@ class ManagerBackupTests(ManagerRestoreTests):
             f"Backup task ended in {backup_task_status} instead of {TaskStatus.DONE}"
         self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, ks_names=ks_names)
         self.run_verification_read_stress(ks_names)
-        mgr_cluster.delete()  # remove cluster at the end of the test
+        self.delete_cluster_from_manager(mgr_cluster=mgr_cluster)  # remove cluster at the end of the test
         self.log.info('finishing test_basic_backup')
 
     def test_backup_multiple_ks_tables(self):
@@ -1137,7 +1158,7 @@ class ManagerRepairTests(ManagerTestFunctionsMixIn):
             "The keyspace with the replication strategy of localstrategy was included in repair, when it shouldn't"
         self.log.info("the sctool repair command was completed successfully")
 
-        mgr_cluster.delete()  # remove cluster at the end of the test
+        self.delete_cluster_from_manager(mgr_cluster=mgr_cluster)  # remove cluster at the end of the test
         self.log.info('finishing test_repair_multiple_keyspace_types')
 
     def test_repair_intensity_feature_on_multiple_node(self):
@@ -1173,17 +1194,17 @@ class ManagerCRUDTests(ManagerTestFunctionsMixIn):
         3) delete the cluster from manager and re-add again.
         """
         self.log.info('starting test_mgmt_cluster_crud')
-        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
+        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.db_cluster.scylla_manager_node)
         mgr_cluster = self.db_cluster.get_cluster_manager()
         # Test cluster attributes
         cluster_orig_name = mgr_cluster.name
         mgr_cluster.update(name="{}_renamed".format(cluster_orig_name))
         assert mgr_cluster.name == cluster_orig_name + "_renamed", "Cluster name wasn't changed after update command"
-        mgr_cluster.delete()
+        self.delete_cluster_from_manager(mgr_cluster=mgr_cluster, skip_cloud_cluster=False)
         mgr_cluster = manager_tool.add_cluster(self.CLUSTER_NAME, db_cluster=self.db_cluster,
                                                auth_token=self.monitors.mgmt_auth_token)
 
-        mgr_cluster.delete()  # remove cluster at the end of the test
+        self.delete_cluster_from_manager(mgr_cluster=mgr_cluster)  # remove cluster at the end of the test
         self.log.info('finishing test_mgmt_cluster_crud')
 
 
@@ -1216,7 +1237,7 @@ class ManagerHealthCheckTests(ManagerTestFunctionsMixIn):
             other_host_ip)
         other_host.start_scylla_server()
 
-        mgr_cluster.delete()  # remove cluster at the end of the test
+        self.delete_cluster_from_manager(mgr_cluster=mgr_cluster)  # remove cluster at the end of the test
         self.log.info('finishing test_mgmt_cluster_healthcheck')
 
     def test_healthcheck_change_max_timeout(self):
@@ -1238,7 +1259,7 @@ class ManagerHealthCheckTests(ManagerTestFunctionsMixIn):
 
         nodes_from_local_dc = self.db_cluster.nodes[:2]
         nodes_from_distant_dc = self.db_cluster.nodes[2:]
-        manager_node = self.monitors.nodes[0]
+        manager_node = self.db_cluster.scylla_manager_node
         mgr_cluster = self.db_cluster.get_cluster_manager()
         try:
             reconfigure_scylla_manager(manager_node=manager_node, logger=self.log,
@@ -1259,7 +1280,7 @@ class ManagerHealthCheckTests(ManagerTestFunctionsMixIn):
                     f'instead it was {dict_host_health[node.ip_address].status}'
         finally:
             reconfigure_scylla_manager(manager_node=manager_node, logger=self.log, values_to_remove=['healthcheck'])
-            mgr_cluster.delete()  # remove cluster at the end of the test
+            self.delete_cluster_from_manager(mgr_cluster=mgr_cluster)  # remove cluster at the end of the test
         self.log.info('finishing test_healthcheck_change_max_timeout')
 
 
@@ -1278,7 +1299,7 @@ class ManagerEncryptionTests(ManagerTestFunctionsMixIn):
         if not self.db_cluster.nodes[0].is_client_encrypt:
             self.db_cluster.enable_client_encrypt()
 
-        manager_node = self.monitors.nodes[0]
+        manager_node = self.db_cluster.scylla_manager_node
 
         self.log.info("Create and send client TLS certificate/key to the manager node")
         manager_node.create_node_certificate(cert_file=manager_node.ssl_conf_dir / TLSAssets.CLIENT_CERT,
@@ -1310,7 +1331,7 @@ class ManagerEncryptionTests(ManagerTestFunctionsMixIn):
         for host_health in dict_host_health.values():
             assert host_health.ssl == HostSsl.OFF, "Not all hosts ssl is 'OFF'"
 
-        mgr_cluster.delete()  # remove cluster at the end of the test
+        self.delete_cluster_from_manager(mgr_cluster=mgr_cluster)  # remove cluster at the end of the test
         self.log.info('finishing test_client_encryption')
 
 
@@ -1551,7 +1572,7 @@ class ManagerRollbackTests(ManagerTestFunctionsMixIn):
         """
         self.log.info('starting test_manager_upgrade')
         scylla_mgmt_upgrade_to_repo = self.params.get('scylla_mgmt_upgrade_to_repo')
-        manager_node = self.monitors.nodes[0]
+        manager_node = self.db_cluster.scylla_manager_node
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=manager_node)
         selected_host = self.get_cluster_hosts_ip()[0]
         cluster_name = 'mgr_cluster1'
@@ -1585,7 +1606,7 @@ class ManagerRollbackTests(ManagerTestFunctionsMixIn):
         self.log.info('starting test_manager_rollback_upgrade')
         self.test_manager_upgrade()
         scylla_mgmt_address = self.params.get('scylla_mgmt_address')
-        manager_node = self.monitors.nodes[0]
+        manager_node = self.db_cluster.scylla_manager_node
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=manager_node)
         manager_from_version = manager_tool.sctool.version
         manager_tool.rollback_upgrade(scylla_mgmt_address=scylla_mgmt_address)
@@ -1604,7 +1625,7 @@ class ManagerInstallationTests(ManagerTestFunctionsMixIn):
         """
         self.log.info('starting test_manager_installed_and_functional')
 
-        manager_node = self.monitors.nodes[0]
+        manager_node = self.db_cluster.scylla_manager_node
         scylla_node = self.db_cluster.nodes[0]
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=manager_node)
 
@@ -1668,7 +1689,7 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
         for node in self.db_cluster.nodes:
             compaction_ops.disable_autocompaction_on_ks_cf(node=node)
 
-        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
+        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.db_cluster.scylla_manager_node)
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
         backup_task = mgr_cluster.create_backup_task(location_list=self.locations, rate_limit_list=["0"])
@@ -1705,7 +1726,7 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
                            All snapshots are defined in the 'defaults/manager_restore_benchmark_snapshots.yaml'
             restore_outside_manager: set True to restore outside of Manager via nodetool refresh
         """
-        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
+        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.db_cluster.scylla_manager_node)
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
         snapshot_data = self.get_snapshot_data(snapshot_name)
@@ -1790,10 +1811,10 @@ class ManagerBackupRestoreConcurrentTests(ManagerTestFunctionsMixIn):
     def report_to_argus(self, report_type: ManagerReportType, data: dict, label: str):
         if report_type == ManagerReportType.READ:
             table = ManagerBackupReadResult(sut_timestamp=mgmt.get_scylla_manager_tool(
-                manager_node=self.monitors.nodes[0]).sctool.client_version_timestamp)
+                manager_node=self.db_cluster.scylla_manager_node).sctool.client_version_timestamp)
         elif report_type == ManagerReportType.BACKUP:
             table = ManagerBackupBenchmarkResult(sut_timestamp=mgmt.get_scylla_manager_tool(
-                manager_node=self.monitors.nodes[0]).sctool.client_version_timestamp)
+                manager_node=self.db_cluster.scylla_manager_node).sctool.client_version_timestamp)
         else:
             raise InvalidArgument("Unknown report type")
 
