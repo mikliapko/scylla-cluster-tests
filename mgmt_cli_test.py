@@ -1513,6 +1513,12 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
         ks_name, cs_write_cmds = self.build_snapshot_preparer_cs_write_cmd(backup_size)
         self.run_and_verify_stress_in_threads(cs_cmds=cs_write_cmds, stop_on_failure=True)
 
+        self.log.info("Trigger compaction on all nodes")
+        for node in self.db_cluster.nodes:
+            node.run_nodetool("compact")
+        self.log.info("Wait for no compaction running")
+        self.wait_no_compactions_running()
+
         self.log.info("Run backup and wait for it to finish")
         backup_task = mgr_cluster.create_backup_task(location_list=location_list, rate_limit_list=["0"])
         backup_task_status = backup_task.wait_and_get_final_status(timeout=200000)
