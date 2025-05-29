@@ -43,6 +43,7 @@ from sdcm.tester import ClusterTester
 from sdcm.cluster import TestConfig
 from sdcm.nemesis import MgmtRepair
 from sdcm.utils.adaptive_timeouts import adaptive_timeout, Operations
+from sdcm.utils.aws_utils import AwsIAM
 from sdcm.utils.common import reach_enospc_on_node, clean_enospc_on_node
 from sdcm.utils.features import is_tablets_feature_enabled
 from sdcm.utils.loader_utils import LoaderUtilsMixin
@@ -602,6 +603,48 @@ class SnapshotPreparerOperations(ClusterTester):
         return cs_cmds
 
 
+class CloudClusterOperations(ClusterTester):
+    @staticmethod
+    def _adjust_aws_restore_policy(locations: list, cluster_id: str) -> None:
+        iam_client = AwsIAM()
+        policies = iam_client.get_policy_by_name_prefix(f"s3-scylla-cloud-backup-{cluster_id}")
+        for policy_arn in policies:
+            for location in locations:
+                iam_client.add_resource_to_iam_policy(
+                    policy_arn=policy_arn,
+                    resource_to_add=f"arn:aws:s3:::{location.split(':')[-1]}",
+                )
+
+    @staticmethod
+    def delete_scheduled_backup(mgr_cluster: AnyManagerCluster):
+        auto_backup_task = mgr_cluster.backup_task_list[0]
+        mgr_cluster.delete_task(auto_backup_task)
+
+    def adjust_backup_policy(self, locations: list, cluster_id: str):
+        if self.params.get("cluster_backend") == "aws":
+            self._adjust_aws_restore_policy(locations, cluster_id=cluster_id)
+
+    def grant_admin_permission_to_scylla_manager(self):
+        self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+
+    def prepare_cloud_cluster(self, locations: list):
+        """Prepare cloud cluster:
+        - delete scheduled backup task to not interfere with restore;
+        - adjust backup policy to allow restore from the snapshot;
+        - grant admin permissions to scylla_manager user.
+        """
+        mgr_cluster = self.db_cluster.get_cluster_manager()
+
+        self.log.info("Delete scheduled backup task to not interfere")
+        self.delete_scheduled_backup(mgr_cluster)
+
+        self.log.info("Adjust restore cluster backup policy")
+        self.adjust_backup_policy(locations=locations, cluster_id=self.params.get("cloud_cluster_id"))
+
+        self.log.info("Grant admin permissions to scylla_manager user")
+        self.grant_admin_permission_to_scylla_manager()
+
+
 class ManagerTestFunctionsMixIn(
     DatabaseOperations,
     StressLoadOperations,
@@ -609,6 +652,7 @@ class ManagerTestFunctionsMixIn(
     BucketOperations,
     SnapshotOperations,
     SnapshotPreparerOperations,
+    CloudClusterOperations,
 ):
     test_config = TestConfig()
     manager_test_metrics = ManagerTestMetrics()
@@ -765,7 +809,7 @@ class ManagerTestFunctionsMixIn(
 
     def create_repair_and_alter_it_with_repair_control(self):
         keyspace_to_be_repaired = "keyspace2"
-        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
+        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.db_cluster.scylla_manager_node)
         mgr_cluster = manager_tool.add_cluster(name=self.CLUSTER_NAME + '_repair_control',
                                                db_cluster=self.db_cluster,
                                                auth_token=self.monitors.mgmt_auth_token)
@@ -856,7 +900,9 @@ class ManagerBackupTests(ManagerRestoreTests):
         backup_task_status = backup_task.wait_and_get_final_status(timeout=1500)
         assert backup_task_status == TaskStatus.DONE, \
             f"Backup task ended in {backup_task_status} instead of {TaskStatus.DONE}"
-        self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, ks_names=ks_names)
+        restore_data_with_task = self.params.get("use_cloud_manager")
+        self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, ks_names=ks_names,
+                                   restore_data_with_task=restore_data_with_task)
         self.run_verification_read_stress(ks_names)
         self.delete_cluster_from_manager(mgr_cluster=mgr_cluster)  # remove cluster at the end of the test
         self.log.info('finishing test_basic_backup')
@@ -1058,7 +1104,7 @@ class ManagerRepairTests(ManagerTestFunctionsMixIn):
     def _test_intensity_and_parallel(self, fault_multiple_nodes):
         keyspace_to_be_repaired = "keyspace2"
         InfoEvent(message='starting test_intensity_and_parallel').publish()
-        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
+        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.db_cluster.scylla_manager_node)
         mgr_cluster = manager_tool.add_cluster(
             name=self.CLUSTER_NAME + '_intensity_and_parallel',
             db_cluster=self.db_cluster,
@@ -1124,7 +1170,7 @@ class ManagerRepairTests(ManagerTestFunctionsMixIn):
 
     def test_repair_multiple_keyspace_types(self):
         self.log.info('starting test_repair_multiple_keyspace_types')
-        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
+        manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.db_cluster.scylla_manager_node)
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
         rf = self.get_rf_based_on_nodes_number() if len(self.params.region_names) > 1 else 2
@@ -1500,7 +1546,7 @@ class ManagerSanityTests(
     ManagerEncryptionTests,
 ):
 
-    def test_manager_sanity(self, prepared_ks: bool = False, ks_names: list = None):
+    def test_manager_sanity(self, prepared_ks: bool = False, ks_names: list = None, is_cloud_cluster: bool = False):
         """
         Test steps:
         1) Run the repair test.
@@ -1524,8 +1570,9 @@ class ManagerSanityTests(
         if self.db_cluster.nodes[0].test_config.MULTI_REGION:
             with self.subTest('Basic test healthcheck change max timeout'):
                 self.test_healthcheck_change_max_timeout()
-        with self.subTest('Basic test suspend and resume'):
-            self.test_suspend_and_resume()
+        if not is_cloud_cluster:
+            with self.subTest('Basic test suspend and resume'):
+                self.test_suspend_and_resume()
         with self.subTest('Client Encryption'):
             # Since this test activates encryption, it has to be the last test in the sanity
             self.test_client_encryption()
@@ -1549,6 +1596,19 @@ class ManagerSanityTests(
         self.test_manager_sanity(prepared_ks=True, ks_names=ks_names)
 
         self.log.info('finishing test_manager_sanity_vnodes_tablets_cluster')
+
+    def test_manager_sanity_cloud_cluster(self):
+        """Test the sanity of the Scylla Manager in a cloud cluster environment.
+        The test ensures that the Manager operates correctly in a cloud-based setup.
+
+        Test steps:
+        1) Prepares the Cloud cluster by adjusting backup policies, deleting scheduled backup tasks,
+        and granting necessary permissions.
+        2) Executes the general manager sanity test with the cloud cluster configuration.
+        """
+        self.prepare_cloud_cluster(locations=self.locations)
+
+        self.test_manager_sanity(is_cloud_cluster=True)
 
 
 class ManagerRollbackTests(ManagerTestFunctionsMixIn):
