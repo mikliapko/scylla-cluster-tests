@@ -1964,6 +1964,7 @@ class ManagerOneToOneRestore(ManagerTestFunctionsMixIn):
                 snapshot_tag=snapshot_data.tag,
                 account_credential_id=snapshot_data.one_one_restore_params["account_credential_id"],
                 provider_id=self._define_cloud_provider_id(),
+                unpin_cpu=True,
             )
         restore_duration = int(timer.duration.total_seconds())
         self.log.debug(f"1-1 restore took {restore_duration} seconds")
