@@ -1,0 +1,13 @@
+test_duration: 60
+
+stress_cmd: "cassandra-stress user profile=/tmp/si-mv-dataset.yaml n=235000000 ops'(insert_query=1)' cl=QUORUM -mode native cql3 -rate threads=100"
+
+instance_type_db: 'i4i.large'
+
+n_db_nodes: 1
+n_loaders: 1
+n_monitor_nodes: 1
+
+client_encrypt: true
+
+user_prefix: manager-installation
