@@ -1,0 +1,15 @@
+test_duration: 60
+
+prepare_write_cmd: ["cassandra-stress user profile=/tmp/c-s_profile_4mv_5queries.yaml ops'(insert=10,delete1=1)' cl=QUORUM n=10000000 -mode cql3 native -rate threads=200",
+                    "cassandra-stress user profile=/tmp/c-s_profile_3si_5queries.yaml ops'(insert=10,delete1=1)' cl=QUORUM n=10000000 -mode cql3 native -rate threads=200"
+                   ]
+
+instance_type_db: 'i4i.large'
+
+n_db_nodes: 3
+n_loaders: 1
+n_monitor_nodes: 1
+
+client_encrypt: true
+
+user_prefix: manager-installation

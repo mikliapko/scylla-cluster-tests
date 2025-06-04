@@ -1,0 +1,205 @@
+keyspace: ecommerce
+
+keyspace_definition: |
+  CREATE KEYSPACE IF NOT EXISTS ecommerce WITH replication = {'class': 'NetworkTopologyStrategy', 'replication_factor': 3};
+
+table: users
+
+table_definition: |
+  CREATE TABLE IF NOT EXISTS ecommerce.users (
+    user_id UUID PRIMARY KEY,
+    username TEXT,
+    email TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    age INT,
+    country TEXT,
+    status TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_users_email ON ecommerce.users (email);
+  CREATE INDEX IF NOT EXISTS idx_users_country ON ecommerce.users (country);
+  CREATE INDEX IF NOT EXISTS idx_users_status ON ecommerce.users (status);
+
+  CREATE TABLE IF NOT EXISTS ecommerce.orders (
+    order_id UUID PRIMARY KEY,
+    user_id UUID,
+    product_id UUID,
+    amount DECIMAL,
+    status TEXT,
+    shipping_address TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_orders_user_id ON ecommerce.orders (user_id);
+  CREATE INDEX IF NOT EXISTS idx_orders_status ON ecommerce.orders (status);
+
+  CREATE MATERIALIZED VIEW IF NOT EXISTS ecommerce.orders_by_user AS
+    SELECT * FROM ecommerce.orders
+    WHERE user_id IS NOT NULL AND order_id IS NOT NULL
+    PRIMARY KEY (user_id, order_id);
+
+  CREATE TABLE IF NOT EXISTS ecommerce.products (
+    product_id UUID PRIMARY KEY,
+    name TEXT,
+    description TEXT,
+    category TEXT,
+    price DECIMAL,
+    brand TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_products_category ON ecommerce.products (category);
+  CREATE INDEX IF NOT EXISTS idx_products_brand ON ecommerce.products (brand);
+
+  CREATE MATERIALIZED VIEW IF NOT EXISTS ecommerce.products_by_category AS
+    SELECT * FROM ecommerce.products
+    WHERE category IS NOT NULL AND product_id IS NOT NULL
+    PRIMARY KEY (category, product_id);
+
+columnspec:
+  - name: user_id
+    size: fixed(16)
+    population: uniform(1..5000000)
+
+  - name: username
+    size: uniform(5..20)
+    population: uniform(1..5000000)
+
+  - name: email
+    size: uniform(10..50)
+    population: uniform(1..5000000)
+
+  - name: first_name
+    size: uniform(3..15)
+    population: uniform(1..50000)
+
+  - name: last_name
+    size: uniform(3..20)
+    population: uniform(1..50000)
+
+  - name: age
+    population: uniform(18..80)
+
+  - name: country
+    size: fixed(2)
+    population: uniform(1..100)
+
+  - name: status
+    size: uniform(6..10)
+    population: uniform(1..8)
+
+  - name: order_id
+    size: fixed(16)
+    population: uniform(1..80000000)
+
+  - name: product_id
+    size: fixed(16)
+    population: uniform(1..500000)
+
+  - name: amount
+    population: uniform(10..2000)
+
+  - name: shipping_address
+    size: uniform(30..150)
+    population: uniform(1..5000000)
+
+  - name: name
+    size: uniform(15..80)
+    population: uniform(1..500000)
+
+  - name: description
+    size: uniform(100..500)
+    population: uniform(1..500000)
+
+  - name: category
+    size: uniform(5..25)
+    population: uniform(1..50)
+
+  - name: price
+    population: uniform(5..2000)
+
+  - name: brand
+    size: uniform(3..25)
+    population: uniform(1..500)
+
+  - name: event_id
+    population: uniform(1..150000000)
+
+  - name: event_type
+    size: uniform(8..30)
+    population: uniform(1..25)
+
+  - name: event_data
+    size: uniform(3..12)
+    population: uniform(1..10000)
+
+  - name: session_id
+    size: fixed(16)
+    population: uniform(1..10000000)
+
+  - name: date
+    population: uniform(19358..20457)
+
+  - name: metric_name
+    size: uniform(10..50)
+    population: uniform(1..200)
+
+  - name: value
+    population: uniform(1..100000000)
+
+  - name: quantity
+    population: uniform(0..5000)
+
+  - name: reserved_quantity
+    population: uniform(0..500)
+
+  - name: warehouse_location
+    size: uniform(5..20)
+    population: uniform(1..50)
+
+  - name: reorder_level
+    population: uniform(50..500)
+
+insert:
+  partitions: fixed(1)
+  select: uniform(1..1000000)
+  batchtype: UNLOGGED
+
+queries:
+  # User queries
+  user_by_id:
+    cql: SELECT * FROM ecommerce.users WHERE user_id = ?
+    fields: samerow
+
+  users_by_email:
+    cql: SELECT * FROM ecommerce.users WHERE email = ?
+    fields: samerow
+
+  users_by_country:
+    cql: SELECT * FROM ecommerce.users WHERE country = ? LIMIT 100
+    fields: samerow
+
+  # Order queries
+  order_by_id:
+    cql: SELECT * FROM ecommerce.orders WHERE order_id = ?
+    fields: samerow
+
+  orders_by_user:
+    cql: SELECT * FROM ecommerce.orders_by_user WHERE user_id = ?
+    fields: samerow
+
+  orders_by_status:
+    cql: SELECT * FROM ecommerce.orders WHERE status = ? LIMIT 100 ALLOW FILTERING
+    fields: samerow
+
+  # Product queries
+  product_by_id:
+    cql: SELECT * FROM ecommerce.products WHERE product_id = ?
+    fields: samerow
+
+  products_by_category:
+    cql: SELECT * FROM ecommerce.products_by_category WHERE category = ?
+    fields: samerow
+
+  products_by_brand:
+    cql: SELECT * FROM ecommerce.products WHERE brand = ? LIMIT 50 ALLOW FILTERING
+    fields: samerow

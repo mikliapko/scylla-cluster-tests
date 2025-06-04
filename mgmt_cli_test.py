@@ -1604,6 +1604,9 @@ class ManagerInstallationTests(ManagerTestFunctionsMixIn):
         """
         self.log.info('starting test_manager_installed_and_functional')
 
+        self.run_prepare_write_cmd()
+        # self.generate_load_and_wait_for_results()
+
         manager_node = self.monitors.nodes[0]
         scylla_node = self.db_cluster.nodes[0]
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=manager_node)

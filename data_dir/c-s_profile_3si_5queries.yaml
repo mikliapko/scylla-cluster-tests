@@ -19,7 +19,8 @@ table_definition: |
     userdata blob,
     last_access timeuuid,
     PRIMARY KEY(userid)
-  ) WITH compaction = {'class': 'SizeTieredCompactionStrategy'};
+  ) WITH compaction = {'class': 'IncrementalCompactionStrategy'}
+      AND gc_grace_seconds = 7200;
 
 extra_definitions:
   - CREATE INDEX IF NOT EXISTS  users_last_name_ind ON sec_index.users (last_name)
@@ -71,4 +72,7 @@ queries:
     fields: samerow
   si_read5:
     cql: select userid, initials, first_name, last_name from sec_index.users where initials = ?
+    fields: samerow
+  delete1:
+    cql: delete from sec_index.users where userid = ?
     fields: samerow
