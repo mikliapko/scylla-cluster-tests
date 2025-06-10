@@ -19,13 +19,14 @@ table_definition: |
     userdata blob,
     last_access timeuuid,
     PRIMARY KEY(userid)
-  ) WITH compaction = {'class': 'SizeTieredCompactionStrategy'};
+  ) WITH compaction = {'class': 'IncrementalCompactionStrategy'}
+      AND gc_grace_seconds = 7200;
 
 extra_definitions:
-  - CREATE MATERIALIZED VIEW mview.users_by_first_name AS SELECT userid, first_name, email FROM mview.users WHERE first_name IS NOT NULL and userid IS NOT NULL PRIMARY KEY (first_name, userid);
-  - CREATE MATERIALIZED VIEW mview.users_by_last_name AS SELECT userid, last_name, email FROM mview.users WHERE last_name IS NOT NULL and userid IS NOT NULL PRIMARY KEY (last_name, userid);
-  - CREATE MATERIALIZED VIEW mview.users_by_email AS SELECT userid, email FROM mview.users WHERE email IS NOT NULL and userid IS NOT NULL PRIMARY KEY (email, userid);
-  - CREATE MATERIALIZED VIEW mview.users_by_password AS SELECT userid, password FROM mview.users WHERE password IS NOT NULL and userid IS NOT NULL PRIMARY KEY (password, userid);
+  - CREATE MATERIALIZED VIEW mview.users_by_first_name AS SELECT userid, first_name, email FROM mview.users WHERE first_name IS NOT NULL and userid IS NOT NULL PRIMARY KEY (first_name, userid) WITH gc_grace_seconds = 7200;
+  - CREATE MATERIALIZED VIEW mview.users_by_last_name AS SELECT userid, last_name, email FROM mview.users WHERE last_name IS NOT NULL and userid IS NOT NULL PRIMARY KEY (last_name, userid) WITH gc_grace_seconds = 7200;
+  - CREATE MATERIALIZED VIEW mview.users_by_email AS SELECT userid, email FROM mview.users WHERE email IS NOT NULL and userid IS NOT NULL PRIMARY KEY (email, userid) WITH gc_grace_seconds = 7200;
+  - CREATE MATERIALIZED VIEW mview.users_by_password AS SELECT userid, password FROM mview.users WHERE password IS NOT NULL and userid IS NOT NULL PRIMARY KEY (password, userid) WITH gc_grace_seconds = 7200;
 
 columnspec:
   - name: userid
@@ -72,4 +73,7 @@ queries:
     fields: samerow
   read5:
     cql: select * from mview.users_by_password where password = ?
+    fields: samerow
+  delete1:
+    cql: delete from mview.users where userid = ?
     fields: samerow

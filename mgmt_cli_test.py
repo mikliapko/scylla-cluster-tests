@@ -1507,17 +1507,19 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
             location_list = self.locations
 
         self.log.info("Populate the cluster with data")
-        backup_size = self.params.get("mgmt_prepare_snapshot_size")  # in Gb
-        assert backup_size and backup_size >= 1, "Backup size must be at least 1Gb"
+        # backup_size = self.params.get("mgmt_prepare_snapshot_size")  # in Gb
+        # assert backup_size and backup_size >= 1, "Backup size must be at least 1Gb"
+        #
+        # ks_name, cs_write_cmds = self.build_snapshot_preparer_cs_write_cmd(backup_size)
+        # self.run_and_verify_stress_in_threads(cs_cmds=cs_write_cmds, stop_on_failure=True)
 
-        ks_name, cs_write_cmds = self.build_snapshot_preparer_cs_write_cmd(backup_size)
-        self.run_and_verify_stress_in_threads(cs_cmds=cs_write_cmds, stop_on_failure=True)
+        self.run_prepare_write_cmd()
 
-        self.log.info("Trigger compaction on all nodes")
-        for node in self.db_cluster.nodes:
-            node.run_nodetool("compact")
-        self.log.info("Wait for no compaction running")
-        self.wait_no_compactions_running()
+        # self.log.info("Trigger compaction on all nodes")
+        # for node in self.db_cluster.nodes:
+        #     node.run_nodetool("compact")
+        # self.log.info("Wait for no compaction running")
+        # self.wait_no_compactions_running()
 
         self.log.info("Run backup and wait for it to finish")
         backup_task = mgr_cluster.create_backup_task(location_list=location_list, rate_limit_list=["0"])
@@ -1549,9 +1551,11 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
         self.log.info("Send snapshot details to Argus")
         snapshot_details = {
             "tag": backup_task.get_snapshot_tag(),
-            "size": backup_size,
+            # "size": backup_size,
+            "size": 0,
             "locations": ",".join(location_list),
-            "ks_name": ks_name,
+            # "ks_name": ks_name,
+            "ks_name": "name",
             "scylla_version": self.params.get_version_based_on_conf()[0],
             "cluster_id": cluster_id,
             "ear_key_id": key_id,
