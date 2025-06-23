@@ -993,6 +993,16 @@ class ManagerBackupTests(ManagerRestoreTests):
         self.log.info('finishing test_enospc_before_restore')
 
     def test_backup_feature(self):
+        if self.is_cloud_cluster:
+
+            self.log.info("Grant admin permissions to scylla_manager user")
+            self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+
+            self.log.info("Stop scheduled backup task to not interfere")
+            mgr_cluster = self.db_cluster.get_cluster_manager()
+            auto_backup_task = mgr_cluster.backup_task_list[0]
+            auto_backup_task.stop()
+
         self.generate_load_and_wait_for_results()
         with self.subTest('Backup Multiple KS\' and Tables'):
             self.test_backup_multiple_ks_tables()
@@ -1514,15 +1524,6 @@ class ManagerSanityTests(
         3) test_mgmt_cluster_healthcheck
         4) test_client_encryption
         """
-        if self.is_cloud_cluster:
-            # self.log.info("Delete scheduled backup task to not interfere")
-            # mgr_cluster = self.db_cluster.get_cluster_manager()
-            # auto_backup_task = mgr_cluster.backup_task_list[0]
-            # mgr_cluster.delete_task(auto_backup_task)
-
-            self.log.info("Grant admin permissions to scylla_manager user")
-            self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
-
         if not prepared_ks:
             self.generate_load_and_wait_for_results()
         with self.subTest('Basic Backup Test'):
@@ -1564,6 +1565,28 @@ class ManagerSanityTests(
         self.test_manager_sanity(prepared_ks=True, ks_names=ks_names)
 
         self.log.info('finishing test_manager_sanity_vnodes_tablets_cluster')
+
+    def test_manager_sanity_cloud(self):
+        """Standard Manager Sanity test adopted to be run with Scylla Cloud clusters.
+        The test is not so extensive as the regular test_manager_sanity test, because its purpose is to verify
+        Manager-ScyllaDB in Cloud compatibility and basic functionality. Thus, only basic (backup, restore and repair)
+        checks are performed.
+        """
+        if not self.is_cloud_cluster:
+            raise AssertionError("The test_manager_sanity_cloud is only supported for Cloud clusters.")
+
+        self.log.info("Grant admin permissions to scylla_manager user")
+        self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+
+        self.log.info("Generate load and wait for results")
+        self.generate_load_and_wait_for_results()
+
+        with self.subTest('Basic Backup Test'):
+            self.test_basic_backup()
+        with self.subTest('Restore Backup Test'):
+            self.test_restore_backup_with_task()
+        with self.subTest('Repair Multiple Keyspace Types'):
+            self.test_repair_multiple_keyspace_types()
 
 
 class ManagerRollbackTests(ManagerTestFunctionsMixIn):
