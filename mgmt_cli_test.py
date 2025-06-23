@@ -998,10 +998,10 @@ class ManagerBackupTests(ManagerRestoreTests):
             self.log.info("Grant admin permissions to scylla_manager user")
             self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
 
-            self.log.info("Stop scheduled backup task to not interfere")
-            mgr_cluster = self.db_cluster.get_cluster_manager()
-            auto_backup_task = mgr_cluster.backup_task_list[0]
-            auto_backup_task.stop()
+            # self.log.info("Stop scheduled backup task to not interfere")
+            # mgr_cluster = self.db_cluster.get_cluster_manager()
+            # auto_backup_task = mgr_cluster.backup_task_list[0]
+            # auto_backup_task.stop()
 
         self.generate_load_and_wait_for_results()
         with self.subTest('Backup Multiple KS\' and Tables'):
