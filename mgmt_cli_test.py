@@ -315,6 +315,26 @@ class ClusterOperations(ClusterTester):
         else:
             mgr_cluster.delete()
 
+    def grant_admin_permissions_to_scylla_manager(self) -> None:
+        """Grants admin permissions to the scylla_manager user."""
+        self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+
+    def disable_scheduled_backup_task(self) -> None:
+        """Disables scheduled backup task in the cluster.
+        Assumes that the cluster has at least one backup task.
+        """
+        mgr_cluster = self.db_cluster.get_cluster_manager()
+        auto_backup_task = mgr_cluster.backup_task_list[0]
+        auto_backup_task.stop(disable=True)
+
+    def get_backup_task_locations(self) -> list[str]:
+        """Returns the locations of the existing backup task (always the first one).
+        Counts disabled tasks as well.
+        """
+        mgr_cluster = self.db_cluster.get_cluster_manager()
+        auto_backup_task = mgr_cluster.backup_task_list_all[0]
+        return [auto_backup_task.get_task_info_dict()["location"]]
+
 
 class BucketOperations(ClusterTester):
     backup_azure_blob_service = None
@@ -645,10 +665,7 @@ class ManagerTestFunctionsMixIn(
     @cached_property
     def locations(self) -> list[str]:
         if self.is_cloud_cluster:
-            mgr_cluster = self.db_cluster.get_cluster_manager()
-            # Extract location from automatically scheduled backup task
-            auto_backup_task = mgr_cluster.backup_task_list[0]
-            location_list = [auto_backup_task.get_task_info_dict()["location"]]
+            return self.get_backup_task_locations()
         else:  # Regular SCT cluster
             backend = self.params.get("backup_bucket_backend")
             region = next(iter(self.params.region_names), '')
@@ -661,9 +678,7 @@ class ManagerTestFunctionsMixIn(
             )
 
             # FIXME: Make it works with multiple locations or file a bug for scylla-manager.
-            location_list = [f"{backend}:{location}" for location in buckets[:1]]
-
-        return location_list
+            return [f"{backend}:{location}" for location in buckets[:1]]
 
     def get_dc_mapping(self) -> str | None:
         """Get the datacenter mapping string for the restore task if there are > 1 DCs (multiDC) in the cluster.
@@ -1008,26 +1023,6 @@ class ManagerBackupTests(ManagerRestoreTests):
             self.test_enospc_during_backup()
         with self.subTest('Test Restore end of space'):
             self.test_enospc_before_restore()
-
-    def test_backup_feature_cloud(self):
-        if not self.is_cloud_cluster:
-            raise AssertionError("The test_manager_sanity_cloud is only supported for Cloud clusters.")
-
-        self.log.info("Grant admin permissions to scylla_manager user")
-        self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
-
-        self.log.info("Stop scheduled backup task to not interfere")
-        mgr_cluster = self.db_cluster.get_cluster_manager()
-        auto_backup_task = mgr_cluster.backup_task_list[0]
-        auto_backup_task.stop()
-
-        self.generate_load_and_wait_for_results()
-        with self.subTest('Backup Multiple KS\' and Tables'):
-            self.test_backup_multiple_ks_tables()
-        with self.subTest('Backup to Location with path'):
-            self.test_backup_location_with_path()
-        with self.subTest('Test restore a backup with restore task'):
-            self.test_restore_backup_with_task()
 
     def test_no_delta_backup_at_disabled_compaction(self):
         """The purpose of test is to check that delta backup (no changes to DB between backups) takes time -> 0.
@@ -1576,17 +1571,33 @@ class ManagerSanityTests(
 
         self.log.info('finishing test_manager_sanity_vnodes_tablets_cluster')
 
+
+class ManagerInCloudTests(
+    ManagerBackupTests,
+    ManagerRestoreTests,
+    ManagerRepairTests,
+    ManagerHealthCheckTests
+):
+
+    def setUp(self):
+        super().setUp()
+        if not self.is_cloud_cluster:
+            raise ValueError("The test is applicable only for Scylla Cloud clusters")
+
+    def prepare_cloud_manager(self):
+        self.log.info("Grant admin permissions to scylla_manager user")
+        self.grant_admin_permissions_to_scylla_manager()
+
+        self.log.info("Disable scheduled backup task to not interfere")
+        self.disable_scheduled_backup_task()
+
     def test_manager_sanity_cloud(self):
         """Standard Manager Sanity test adopted to be run with Scylla Cloud clusters.
         The test is not so extensive as the regular test_manager_sanity test, because its purpose is to verify
-        Manager-ScyllaDB in Cloud compatibility and basic functionality. Thus, only basic (backup, restore and repair)
-        checks are performed.
+        Manager-ScyllaDB in Cloud compatibility and basic functionality. Thus, only basic (backup, restore, repair
+        health-check) verifications are performed.
         """
-        if not self.is_cloud_cluster:
-            raise AssertionError("The test_manager_sanity_cloud is only supported for Cloud clusters.")
-
-        self.log.info("Grant admin permissions to scylla_manager user")
-        self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+        self.prepare_cloud_manager()
 
         self.log.info("Generate load and wait for results")
         self.generate_load_and_wait_for_results()
@@ -1597,6 +1608,10 @@ class ManagerSanityTests(
             self.test_restore_backup_with_task()
         with self.subTest('Repair Multiple Keyspace Types'):
             self.test_repair_multiple_keyspace_types()
+        with self.subTest('Mgmt cluster Health Check'):
+            self.test_cluster_healthcheck()
+        with self.subTest('Backup Multiple KS\' and Tables'):
+            self.test_backup_multiple_ks_tables()
 
 
 class ManagerRollbackTests(ManagerTestFunctionsMixIn):
