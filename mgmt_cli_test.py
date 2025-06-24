@@ -993,16 +993,6 @@ class ManagerBackupTests(ManagerRestoreTests):
         self.log.info('finishing test_enospc_before_restore')
 
     def test_backup_feature(self):
-        if self.is_cloud_cluster:
-
-            self.log.info("Grant admin permissions to scylla_manager user")
-            self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
-
-            # self.log.info("Stop scheduled backup task to not interfere")
-            # mgr_cluster = self.db_cluster.get_cluster_manager()
-            # auto_backup_task = mgr_cluster.backup_task_list[0]
-            # auto_backup_task.stop()
-
         self.generate_load_and_wait_for_results()
         with self.subTest('Backup Multiple KS\' and Tables'):
             self.test_backup_multiple_ks_tables()
@@ -1018,6 +1008,26 @@ class ManagerBackupTests(ManagerRestoreTests):
             self.test_enospc_during_backup()
         with self.subTest('Test Restore end of space'):
             self.test_enospc_before_restore()
+
+    def test_backup_feature_cloud(self):
+        if not self.is_cloud_cluster:
+            raise AssertionError("The test_manager_sanity_cloud is only supported for Cloud clusters.")
+
+        self.log.info("Grant admin permissions to scylla_manager user")
+        self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+
+        self.log.info("Stop scheduled backup task to not interfere")
+        mgr_cluster = self.db_cluster.get_cluster_manager()
+        auto_backup_task = mgr_cluster.backup_task_list[0]
+        auto_backup_task.stop()
+
+        self.generate_load_and_wait_for_results()
+        with self.subTest('Backup Multiple KS\' and Tables'):
+            self.test_backup_multiple_ks_tables()
+        with self.subTest('Backup to Location with path'):
+            self.test_backup_location_with_path()
+        with self.subTest('Test restore a backup with restore task'):
+            self.test_restore_backup_with_task()
 
     def test_no_delta_backup_at_disabled_compaction(self):
         """The purpose of test is to check that delta backup (no changes to DB between backups) takes time -> 0.
