@@ -260,6 +260,29 @@ sizes:  # size of backed up dataset in GB
       account_credential_id: 1001
       sm_cluster_id: "37299ddb-66af-4d5f-8b52-4d3b44872520"
 
+  50gb_1t_ics_cloud_single_qalab:
+    tag: "sm_20250715152802UTC"
+    locations:
+      - "AWS_EU_WEST_1:s3:scylla-cloud-backup-249-263-35fy4m-manager-tests"
+    exp_timeout: 3600  # 1 hour
+    scylla_version: "2025.2.0"
+    number_of_nodes: 3
+    prohibit_verification_read: false
+    dataset:
+      schema:
+        "50gb_ics_quorum_1024_1_2025_2_0":
+          - standard1: 50
+      num_of_rows: 52428800
+      compaction: "IncrementalCompactionStrategy"
+      cl: "QUORUM"
+      col_size: 1024
+      col_n: 1
+      replication: "NetworkTopologyStrategy"
+      rf: 3
+    one_one_restore_params:
+      account_credential_id: 1
+      sm_cluster_id: "41477a8c-dfa4-45dc-a018-15f76ed78622"
+
   50gb_1t_ics_cloud_single_compacted:
     tag: "sm_20250528173550UTC"
     locations:
