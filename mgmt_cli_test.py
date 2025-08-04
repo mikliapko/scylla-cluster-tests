@@ -1507,11 +1507,11 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
             location_list = self.locations
 
         self.log.info("Populate the cluster with data")
-        # backup_size = self.params.get("mgmt_prepare_snapshot_size")  # in Gb
-        # assert backup_size and backup_size >= 1, "Backup size must be at least 1Gb"
-        #
-        # ks_name, cs_write_cmds = self.build_snapshot_preparer_cs_write_cmd(backup_size)
-        # self.run_and_verify_stress_in_threads(cs_cmds=cs_write_cmds, stop_on_failure=True)
+        backup_size = self.params.get("mgmt_prepare_snapshot_size")  # in Gb
+        assert backup_size and backup_size >= 1, "Backup size must be at least 1Gb"
+
+        ks_name, cs_write_cmds = self.build_snapshot_preparer_cs_write_cmd(backup_size)
+        self.run_and_verify_stress_in_threads(cs_cmds=cs_write_cmds, stop_on_failure=True)
 
         self.run_prepare_write_cmd()
 
@@ -1551,11 +1551,9 @@ class ManagerHelperTests(ManagerTestFunctionsMixIn):
         self.log.info("Send snapshot details to Argus")
         snapshot_details = {
             "tag": backup_task.get_snapshot_tag(),
-            # "size": backup_size,
-            "size": 0,
+            "size": backup_size,
             "locations": ",".join(location_list),
-            # "ks_name": ks_name,
-            "ks_name": "name",
+            "ks_name": ks_name,
             "scylla_version": self.params.get_version_based_on_conf()[0],
             "cluster_id": cluster_id,
             "ear_key_id": key_id,
