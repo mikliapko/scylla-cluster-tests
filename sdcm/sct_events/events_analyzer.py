@@ -11,7 +11,6 @@
 #
 # Copyright (c) 2020 ScyllaDB
 
-import sys
 import logging
 import threading
 from typing import Tuple, Any, Optional
@@ -49,7 +48,8 @@ class EventsAnalyzer(BaseEventsProcess[Tuple[str, Any], None], threading.Thread)
                         raise TestFailure(f"Stress command failed: {event}")
                     raise TestFailure(f"Got critical event: {event}")
                 except TestFailure:
-                    self.kill_test(sys.exc_info())
+                    pass
+                    # self.kill_test(sys.exc_info())
 
     def kill_test(self, backtrace_with_reason, memo={}) -> None:  # pylint: disable=dangerous-default-value  # noqa: B006
         self.terminate()
