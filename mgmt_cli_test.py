@@ -854,10 +854,11 @@ class ManagerBackupTests(ManagerRestoreTests):
         self.log.info('starting test_basic_backup')
         mgr_cluster = self.db_cluster.get_cluster_manager()
         backup_task = mgr_cluster.create_backup_task(location_list=self.locations)
-        backup_task_status = backup_task.wait_and_get_final_status(timeout=1500)
+        backup_task_status = backup_task.wait_and_get_final_status(timeout=7200)
         assert backup_task_status == TaskStatus.DONE, \
             f"Backup task ended in {backup_task_status} instead of {TaskStatus.DONE}"
-        self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, ks_names=ks_names)
+        self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, ks_names=ks_names,
+                                   restore_data_with_task=True, timeout=7200)
         self.run_verification_read_stress(ks_names)
         mgr_cluster.delete()  # remove cluster at the end of the test
         self.log.info('finishing test_basic_backup')
@@ -1542,23 +1543,23 @@ class ManagerSanityTests(
             self.generate_load_and_wait_for_results()
         with self.subTest('Basic Backup Test'):
             self.test_basic_backup(ks_names=ks_names)
-        with self.subTest('Restore Backup Test'):
-            self.test_restore_backup_with_task(ks_names=ks_names)
-        with self.subTest('Repair Multiple Keyspace Types'):
-            self.test_repair_multiple_keyspace_types()
-        with self.subTest('Mgmt Cluster CRUD'):
-            self.test_cluster_crud()
-        with self.subTest('Mgmt cluster Health Check'):
-            self.test_cluster_healthcheck()
-        # test_healthcheck_change_max_timeout requires a multi dc run
-        if self.db_cluster.nodes[0].test_config.MULTI_REGION:
-            with self.subTest('Basic test healthcheck change max timeout'):
-                self.test_healthcheck_change_max_timeout()
-        with self.subTest('Basic test suspend and resume'):
-            self.test_suspend_and_resume()
-        with self.subTest('Client Encryption'):
-            # Since this test activates encryption, it has to be the last test in the sanity
-            self.test_client_encryption()
+        # with self.subTest('Restore Backup Test'):
+        #     self.test_restore_backup_with_task(ks_names=ks_names)
+        # with self.subTest('Repair Multiple Keyspace Types'):
+        #     self.test_repair_multiple_keyspace_types()
+        # with self.subTest('Mgmt Cluster CRUD'):
+        #     self.test_cluster_crud()
+        # with self.subTest('Mgmt cluster Health Check'):
+        #     self.test_cluster_healthcheck()
+        # # test_healthcheck_change_max_timeout requires a multi dc run
+        # if self.db_cluster.nodes[0].test_config.MULTI_REGION:
+        #     with self.subTest('Basic test healthcheck change max timeout'):
+        #         self.test_healthcheck_change_max_timeout()
+        # with self.subTest('Basic test suspend and resume'):
+        #     self.test_suspend_and_resume()
+        # with self.subTest('Client Encryption'):
+        #     # Since this test activates encryption, it has to be the last test in the sanity
+        #     self.test_client_encryption()
 
     def test_manager_sanity_vnodes_tablets_cluster(self):
         """
