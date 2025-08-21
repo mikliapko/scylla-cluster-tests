@@ -1050,6 +1050,37 @@ class ManagerBackupTests(ManagerRestoreTests):
 
         self.log.info('finishing test_consecutive_backups')
 
+    def test_sequential_backups_with_background_reads(self):
+
+        self.log.info("Initialize Scylla Manager")
+        mgr_cluster = self.db_cluster.get_cluster_manager()
+
+        # self.log.info("Populate cluster with ~200GB of data")
+        # cs_write_cmds = self.params.get("prepare_write_cmd")
+        # self.run_and_verify_stress_in_threads(cs_cmds=cs_write_cmds, stop_on_failure=True)
+
+        self.log.info("Trigger background write load of 5000/s")
+        stress_cmd_w = self.params.get("stress_cmd_w")
+        _ = self.run_stress_thread(stress_cmd=stress_cmd_w)
+
+        self.log.info("Trigger background read load of 20/s")
+        stress_cmd_r = self.params.get("stress_cmd_r")
+        _ = self.run_stress_thread(stress_cmd=stress_cmd_r, stop_test_on_failure=False)
+
+        self.log.info("Create backup task to run once per hour")
+        backup_task = mgr_cluster.create_backup_task(
+            location_list=self.locations,
+            rate_limit_list=["100"],
+            cron="@hourly",
+        )
+
+        self.log.info("Sleep for 6 hours to allow for multiple backups to run")
+        start_time = time.time()
+        while time.time() - start_time < 3600 * 6:
+            self.log.debug(f"Backup task status - {backup_task.status}")
+            self.log.debug(f"Backup task progress - {backup_task.progress}")
+            time.sleep(300)
+
 
 class ManagerRepairTests(ManagerTestFunctionsMixIn):
     LOCALSTRATEGY_KEYSPACE_NAME = "localstrategy_keyspace"
