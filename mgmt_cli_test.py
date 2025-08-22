@@ -1055,9 +1055,9 @@ class ManagerBackupTests(ManagerRestoreTests):
         self.log.info("Initialize Scylla Manager")
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
-        # self.log.info("Populate cluster with ~200GB of data")
-        # cs_write_cmds = self.params.get("prepare_write_cmd")
-        # self.run_and_verify_stress_in_threads(cs_cmds=cs_write_cmds, stop_on_failure=True)
+        self.log.info("Populate cluster with ~200GB of data")
+        cs_write_cmds = self.params.get("prepare_write_cmd")
+        self.run_and_verify_stress_in_threads(cs_cmds=cs_write_cmds, stop_on_failure=True)
 
         self.log.info("Trigger background write load of 5000/s")
         stress_cmd_w = self.params.get("stress_cmd_w")
