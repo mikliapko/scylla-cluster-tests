@@ -2019,3 +2019,46 @@ class ManagerBackupRestoreConcurrentTests(ManagerTestFunctionsMixIn):
 
         backup_thread.join()
         read_stress_thread.join()
+
+
+class VectorStoreInCloud(ManagerRestoreBenchmarkTests):
+
+    def _adjust_aws_restore_policy(self, locations: list[str], cluster_id: str) -> None:
+        assert self.params.get("use_cloud_manager"), "Should be applied to Cloud-managed clusters only"
+
+        iam_client = AwsIAM()
+        policies = iam_client.get_policy_by_name_prefix(f"s3-scylla-cloud-backup-{cluster_id}")
+        for policy_arn in policies:
+            for location in locations:
+                iam_client.add_resource_to_iam_policy(
+                    policy_arn=policy_arn,
+                    resource_to_add=f"arn:aws:s3:::{location.split(':')[-1]}",
+                )
+
+    def test_vector_store_in_cloud(self):
+        self.log.info("Initialize Scylla Manager")
+        mgr_cluster = self.db_cluster.get_cluster_manager()
+
+        self.log.info("Define snapshot location")
+        locations = ["us-east-1:s3:vector-store-backup-50k-1536dim"]
+        snapshot_tag = "sm_20250829123307UTC"
+
+        if self.params.get("use_cloud_manager"):
+            self.log.info("Delete scheduled backup task to not interfere")
+            auto_backup_task = mgr_cluster.backup_task_list[0]
+            mgr_cluster.delete_task(auto_backup_task)
+
+            self.log.info("Adjust restore cluster backup policy")
+            if self.params.get("cluster_backend") == "aws":
+                self._adjust_aws_restore_policy(locations, cluster_id=self.db_cluster.cloud_cluster_id)
+
+            self.log.info("Grant admin permissions to scylla_manager user")
+            self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+
+        self.log.info("Restoring the schema")
+        self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_tag, timeout=120,
+                                      restore_schema=True, location_list=locations)
+
+        self.log.info("Restoring the data with standard L&S approach")
+        self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_tag,
+                                      timeout=600, restore_data=True, location_list=locations)
