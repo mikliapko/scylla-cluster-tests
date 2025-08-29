@@ -14,7 +14,7 @@
 # Copyright (c) 2016 ScyllaDB
 # pylint: disable=too-many-lines
 
-# pylint: disable=too-many-lines
+import ast
 import random
 import threading
 from enum import Enum
@@ -49,6 +49,7 @@ from sdcm.utils.adaptive_timeouts import adaptive_timeout, Operations
 from sdcm.utils.aws_utils import AwsIAM
 from sdcm.utils.common import reach_enospc_on_node, clean_enospc_on_node
 from sdcm.utils.features import is_tablets_feature_enabled
+from sdcm.utils.file import File
 from sdcm.utils.loader_utils import LoaderUtilsMixin
 from sdcm.utils.time_utils import ExecutionTimer
 from sdcm.sct_events.system import InfoEvent
@@ -428,6 +429,17 @@ class BucketOperations(ClusterTester):
             self.sync_gs_buckets(source=source, destination=destination)
         else:
             raise ValueError(f"Unsupported cluster backend - {cluster_backend}, should be either aws or gce")
+
+    @staticmethod
+    def adjust_aws_restore_policy(locations: list[str], cluster_id: str) -> None:
+        iam_client = AwsIAM()
+        policies = iam_client.get_policy_by_name_prefix(f"s3-scylla-cloud-backup-{cluster_id}")
+        for policy_arn in policies:
+            for location in locations:
+                iam_client.add_resource_to_iam_policy(
+                    policy_arn=policy_arn,
+                    resource_to_add=f"arn:aws:s3:::{location.split(':')[-1]}",
+                )
 
 
 class SnapshotOperations(ClusterTester):
@@ -1720,18 +1732,6 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
             row_name=dataset_label,
         )
 
-    def _adjust_aws_restore_policy(self, snapshot: SnapshotData, cluster_id: str) -> None:
-        assert self.params.get("use_cloud_manager"), "Should be applied to Cloud-managed clusters only"
-
-        iam_client = AwsIAM()
-        policies = iam_client.get_policy_by_name_prefix(f"s3-scylla-cloud-backup-{cluster_id}")
-        for policy_arn in policies:
-            for location in snapshot.locations:
-                iam_client.add_resource_to_iam_policy(
-                    policy_arn=policy_arn,
-                    resource_to_add=f"arn:aws:s3:::{location.split(':')[-1]}",
-                )
-
     def test_backup_and_restore_only_data(self):
         """The test is extensively used for restore benchmarking purposes and consists of the following steps:
         1. Populate the cluster with data (currently operates with datasets of 500GB, 1TB, 2TB, 5TB);
@@ -1794,7 +1794,8 @@ class ManagerRestoreBenchmarkTests(ManagerTestFunctionsMixIn):
 
             self.log.info("Adjust restore cluster backup policy")
             if self.params.get("cluster_backend") == "aws":
-                self._adjust_aws_restore_policy(snapshot_data, cluster_id=self.db_cluster.cloud_cluster_id)
+                self.adjust_aws_restore_policy(locations=snapshot_data.locations,
+                                               cluster_id=self.db_cluster.cloud_cluster_id)
 
             self.log.info("Grant admin permissions to scylla_manager user")
             self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
@@ -2026,3 +2027,80 @@ class ManagerBackupRestoreConcurrentTests(ManagerTestFunctionsMixIn):
 
         backup_thread.join()
         read_stress_thread.join()
+
+
+class VectorStoreInCloud(ManagerRestoreBenchmarkTests):
+    def testDown(self):
+        super().tearDown()
+
+    def _adjust_aws_restore_policy(self, locations: list[str], cluster_id: str) -> None:
+        assert self.params.get("use_cloud_manager"), "Should be applied to Cloud-managed clusters only"
+
+        iam_client = AwsIAM()
+        policies = iam_client.get_policy_by_name_prefix(f"s3-scylla-cloud-backup-{cluster_id}")
+        for policy_arn in policies:
+            for location in locations:
+                iam_client.add_resource_to_iam_policy(
+                    policy_arn=policy_arn,
+                    resource_to_add=f"arn:aws:s3:::{location.split(':')[-1]}",
+                )
+
+    def test_vector_store_in_cloud(self):
+        self.log.info("Initialize Scylla Manager")
+        mgr_cluster = self.db_cluster.get_cluster_manager()
+
+        self.log.info("Define snapshot location")
+        locations = ["us-east-1:s3:scylla-cloud-backup-vector-50k-1536dim"]
+        snapshot_tag = "sm_20250903104929UTC"
+
+        if self.params.get("use_cloud_manager"):
+            self.log.info("Delete scheduled backup task to not interfere")
+            auto_backup_task = mgr_cluster.backup_task_list[0]
+            mgr_cluster.delete_task(auto_backup_task)
+
+            self.log.info("Adjust restore cluster backup policy")
+            if self.params.get("cluster_backend") == "aws":
+                self._adjust_aws_restore_policy(locations, cluster_id=self.db_cluster.cloud_cluster_id)
+
+            self.log.info("Grant admin permissions to scylla_manager user")
+            self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+
+        time.sleep(30)
+
+        self.log.info("Restoring the schema")
+        self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_tag, timeout=120,
+                                      restore_schema=True, location_list=locations)
+
+        self.log.info("Restoring the data with standard L&S approach")
+        self.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=snapshot_tag,
+                                      timeout=600, restore_data=True, location_list=locations)
+
+        with self.db_cluster.cql_connection_patient(self.db_cluster.nodes[0]) as session:
+            query = "CREATE CUSTOM INDEX vdb_bench_collection_vector_idx ON vdb_bench.vdb_bench_collection(vector) USING 'vector_index'"
+            session.execute(query)
+
+        self.log.info("Sleep 120 seconds for indexes to be built")
+        # TODO: rework when it'd be possible to check index build status via API
+        time.sleep(120)
+
+        self.log.info("Execute verification requests")
+        test_data = File("data_dir/vector_store/test_data.txt").readlines()
+        ground_truth = File("data_dir/vector_store/ground_truth.txt").readlines()
+        assert len(test_data) == len(ground_truth), \
+            "Test data and ground truth files have different lengths, can't proceed with verification queries"
+
+        cql_cmd_template = "SELECT id FROM vdb_bench.vdb_bench_collection ORDER BY vector ANN OF {vector} LIMIT 10;"
+        for _verification_run_id in range(10):
+            verification_run_id = _verification_run_id + 1
+            self.log.info("Running verification request %d", verification_run_id)
+            index = random.randint(0, len(test_data) - 1)
+            vector_value = test_data[index]
+            expected_ids_list = ast.literal_eval(ground_truth[index])
+
+            with self.db_cluster.cql_connection_patient(self.db_cluster.nodes[0]) as session:
+                query = cql_cmd_template.format(vector=vector_value)
+                rows = session.execute(query).all()
+
+            for idx, row in enumerate(rows, start=1):
+                assert row.id in expected_ids_list[:10], \
+                    f"Not found row_id={row.id},position={idx} amongst the first 10 expected ids {expected_ids_list}"
