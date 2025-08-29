@@ -359,6 +359,13 @@ class ManagerEmailReporter(BaseEmailReporter):
     email_template_file = "results_manager.html"
 
 
+class VectorStoreInCloudEmailReporter(BaseEmailReporter):
+    _fields = (
+        "average_recall",
+    )
+    email_template_file = "results_vector_store_in_cloud.html"
+
+
 class LongevityEmailReporter(BaseEmailReporter):
     _fields = (
         "grafana_screenshots",
@@ -613,6 +620,8 @@ def build_reporter(name: str,  # noqa: PLR0911
         return PerfSimpleQueryReporter(email_recipients=email_recipients, logdir=logdir)
     elif "ScaleUp" in name:
         return ScaleUpEmailReporter(email_recipients=email_recipients, logdir=logdir)
+    elif "VectorStoreInCloud" in name:
+        return VectorStoreInCloudEmailReporter(email_recipients=email_recipients, logdir=logdir)
     else:
         return None
 

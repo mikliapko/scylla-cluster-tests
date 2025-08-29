@@ -131,10 +131,15 @@ def enable_default_filters(sct_config: SCTConfiguration):  # pylint: disable=unu
     # Change Startup failure severity to WARNING to avoid critical failure in tests.
     # Apply only for Cloud clusters, where every failed node startup is retried by Cloud leading to the normal
     # cluster state at the point when SCT starts to run tests.
-    if sct_config.get('use_cloud_manager') and SkipPerIssues('scylladb/siren#13281', params=sct_config):
-        EventsSeverityChangerFilter(new_severity=Severity.WARNING,
-                                    event_class=DatabaseLogEvent.DATABASE_ERROR,
-                                    regex=r".*Startup failed.*").publish()
+    if sct_config.get('use_cloud_manager'):
+        if SkipPerIssues('scylladb/siren#13281', params=sct_config):
+            EventsSeverityChangerFilter(new_severity=Severity.WARNING,
+                                        event_class=DatabaseLogEvent.DATABASE_ERROR,
+                                        regex=r".*Startup failed.*").publish()
+        if SkipPerIssues('scylladb/scylladb#24198', params=sct_config):
+            EventsSeverityChangerFilter(new_severity=Severity.WARNING,
+                                        event_class=DatabaseLogEvent.OVERSIZED_ALLOCATION,
+                                        regex=r".*seastar_memory - oversized allocation:.*").publish()
 
     if sct_config.get('new_scylla_repo') or sct_config.get('new_version'):
         # scylladb/scylla-enterprise#3814
