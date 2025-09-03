@@ -68,18 +68,19 @@ class VectorStoreInCloud(ClusterTester):
         self.log.info("Initialize Scylla Manager")
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
-        if self.params.get("use_cloud_manager"):
-            self.log.info("Delete scheduled backup task to not interfere")
-            auto_backup_task = mgr_cluster.backup_task_list[0]
-            mgr_cluster.delete_task(auto_backup_task)
+        self.log.info("Delete scheduled backup task to not interfere")
+        auto_backup_task = mgr_cluster.backup_task_list[0]
+        mgr_cluster.delete_task(auto_backup_task)
 
-            self.log.info("Adjust restore cluster backup policy")
-            if self.params.get("cluster_backend") == "aws":
-                manager_operations.adjust_aws_restore_policy(locations=self.locations,
-                                                             cluster_id=self.db_cluster.cloud_cluster_id)
+        self.log.info("Adjust restore cluster backup policy")
+        if self.params.get("cluster_backend") == "aws":
+            manager_operations.adjust_aws_restore_policy(locations=self.locations,
+                                                         cluster_id=self.db_cluster.cloud_cluster_id)
 
-            self.log.info("Grant admin permissions to scylla_manager user")
-            self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+        self.log.info("Grant admin permissions to scylla_manager user")
+        self.db_cluster.nodes[0].run_cqlsh(cmd="grant scylla_admin to scylla_manager")
+
+        time.sleep(30)
 
         self.log.info("Restoring the schema")
         manager_operations.restore_backup_with_task(mgr_cluster=mgr_cluster, snapshot_tag=SNAPSHOT_TAG,
