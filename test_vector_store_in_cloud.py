@@ -58,7 +58,7 @@ class VectorStoreInCloud(ClusterTester):
                 query = cql_cmd_template.format(vector=vector_value)
                 rows = session.execute(query).all()
 
-            for idx, row in enumerate(rows):
+            for idx, row in enumerate(rows, start=1):
                 assert row.id in ground_truth_ids[:10], \
                     f"Row ID {row.id} at position {idx} not found amongst the first 10 expected ids {ground_truth_ids}"
 

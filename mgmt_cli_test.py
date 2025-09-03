@@ -428,9 +428,8 @@ class BucketOperations(ClusterTester):
         else:
             raise ValueError(f"Unsupported cluster backend - {cluster_backend}, should be either aws or gce")
 
-    def adjust_aws_restore_policy(self, locations: list[str], cluster_id: str) -> None:
-        assert self.params.get("use_cloud_manager"), "Should be applied to Cloud-managed clusters only"
-
+    @staticmethod
+    def adjust_aws_restore_policy(locations: list[str], cluster_id: str) -> None:
         iam_client = AwsIAM()
         policies = iam_client.get_policy_by_name_prefix(f"s3-scylla-cloud-backup-{cluster_id}")
         for policy_arn in policies:
@@ -2096,6 +2095,6 @@ class VectorStoreInCloud(ManagerRestoreBenchmarkTests):
                 query = cql_cmd_template.format(vector=vector_value)
                 rows = session.execute(query).all()
 
-            for idx, row in enumerate(rows):
+            for idx, row in enumerate(rows, start=1):
                 assert row.id in expected_ids_list[:10], \
                     f"Not found row_id={row.id},position={idx} amongst the first 10 expected ids {expected_ids_list}"
