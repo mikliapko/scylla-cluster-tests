@@ -95,7 +95,7 @@ def get_schema_create_statements_from_file(
     """Parses schema information from a local schema.json file.
 
     Args:
-        schema_file_path: Path to the local schema.json file (can be gzipped or plain JSON)
+        schema_file_path: Path to the local schema.json file
         exclude_system_ks: Whether to exclude system keyspaces from the results
         exclude_roles: Whether to exclude role-related statements from the results
     """

@@ -35,16 +35,15 @@ class VectorStoreInCloud(ManagerTestFunctionsMixIn):
         return email_data
 
     @staticmethod
-    def download_vector_store_test_data_from_s3(include_dataset: bool = True):
+    def download_vector_store_test_data_from_s3():
         s3_storage = S3Storage(bucket=BUCKET_NAME)
 
         base_url = f"https://{BUCKET_NAME}.s3.amazonaws.com"
         s3_storage.download_file(link=f"{base_url}/{TEST_DATA_FILENAME}", dst_dir=DATA_DIR_PATH)
         s3_storage.download_file(link=f"{base_url}/{GROUND_TRUTH_FILENAME}", dst_dir=DATA_DIR_PATH)
 
-        if include_dataset:
-            s3_storage.download_file(link=f"{base_url}/{SCHEMA_FILENAME}", dst_dir=DATA_DIR_PATH)
-            s3_storage.download_file(link=f"{base_url}/{DATASET_FILENAME}", dst_dir=DATA_DIR_PATH)
+        s3_storage.download_file(link=f"{base_url}/{SCHEMA_FILENAME}", dst_dir=DATA_DIR_PATH)
+        s3_storage.download_file(link=f"{base_url}/{DATASET_FILENAME}", dst_dir=DATA_DIR_PATH)
 
     def run_vector_store_verification(self):
         test_data = File(TEST_DATA_FILE_PATH).readlines()
@@ -86,13 +85,12 @@ class VectorStoreInCloud(ManagerTestFunctionsMixIn):
         self.log.info("Average recall for %d verification queries: %f", total_queries, average_recall)
         assert average_recall > 0.85, f"Average recall {average_recall} is below the expected threshold of 0.85"
 
-    def test_vector_store_in_cloud(self, restore_from_backup: bool = False):
+    def test_vector_store_in_cloud(self):
         self.log.info("Download Vector Store test data from S3")
-        include_dataset = not restore_from_backup
-        self.download_vector_store_test_data_from_s3(include_dataset=include_dataset)
+        self.download_vector_store_test_data_from_s3()
 
         self.log.info("Create schema applying CQL statements")
-        ks_statements, other_statements = get_schema_create_statements_from_file(SCHEMA_FILE_PATH)
+        ks_statements, other_statements = get_schema_create_statements_from_file(schema_file_path=SCHEMA_FILE_PATH)
 
         # DC name written in the schema file may differ from the one used in the cluster under test
         # if run in region or cloud provider different from ones where backup was taken
