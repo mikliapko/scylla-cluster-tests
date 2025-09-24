@@ -150,27 +150,27 @@ class VectorStoreInCloudSanity(VectorStoreInCloudBase):
         self.prepare_vector_store_index()
 
         self.log.info("Run Vector Store verification queries")
-        self.test_vector_store_recall()
+        self.test_vector_store_recall(queries_num=100)
 
 
 class VectorStoreInCloudReplaceNode(VectorStoreInCloudBase):
-    def _define_vector_store_node_id(self):
-        self.db_cluster.define_vector_store_node_ids()
-
-    def test_replace_node_change_instance_type(self, instance_type_id: int):
+    def test_replace_node_no_interruptions_expected(self,
+                                                    instance_type_id: Optional[int] = None,
+                                                    version: Optional[str] = None):
         self.log.debug("Start Vector Store verification queries in background thread")
         recall_test_thread = Thread(target=self.test_vector_store_recall, kwargs={"duration": 300})
         recall_test_thread.start()
 
-        server_id = random.choice(self.db_cluster.define_vector_store_node_id())
-
-        self.log.debug("Replace Vector Store node %s with new instance type ID %d", server_id, instance_type_id)
-        self.db_cluster.replace_vector_store_node(server_id=server_id, instance_type_id=instance_type_id)
+        server_id = random.choice(self.db_cluster.define_vector_store_node_ids())
+        self.log.debug("Replace Vector Store node %s - new instance type ID %s, new version %s",
+                       server_id, instance_type_id, version)
+        self.db_cluster.replace_vector_store_node(
+            server_id=server_id,
+            instance_type_id=instance_type_id,
+            service_version=version,
+        )
 
         recall_test_thread.join(timeout=300)
-
-    def test_replace_node_upgrade_vector_store_version(self):
-        pass
 
     def test_replace_node_broken_instance(self):
         vector_value = random.choice(self.test_data)
@@ -188,9 +188,12 @@ class VectorStoreInCloudReplaceNode(VectorStoreInCloudBase):
         self.log.info("Run Vector Store verification BEFORE replacing a node")
         self.test_vector_store_recall(queries_num=10)
 
-        self.log.info("Run node replacement")
+        self.log.info("Run VS node replacement, no changes to instance type or version")
+        self.test_replace_node_no_interruptions_expected()
+
+        self.log.info("Run node replacement changing instance type")
         instance_type_id = 62 if self.params.get("cluster_backend") == "aws" else 41
-        self.test_replace_node_change_instance_type(instance_type_id)
+        self.test_replace_node_no_interruptions_expected(instance_type_id=instance_type_id)
 
         self.log.info("Run Vector Store verification AFTER replacing a node")
         self.test_vector_store_recall(queries_num=10)
