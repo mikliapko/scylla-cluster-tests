@@ -1,12 +1,14 @@
 import ast
 import random
 import time
+from functools import cached_property
+from threading import Thread
+from typing import Optional
 
-from mgmt_cli_test import ManagerTestFunctionsMixIn
 from sdcm.mgmt.helpers import get_schema_create_statements_from_file, substitute_dc_name_in_ks_statements_if_different
+from sdcm.tester import ClusterTester
 from sdcm.utils.common import S3Storage
 from sdcm.utils.file import File
-
 
 # Vector Store test data files
 BUCKET_NAME = "vector-store-in-cloud"
@@ -22,8 +24,10 @@ GROUND_TRUTH_FILE_PATH = DATA_DIR_PATH + GROUND_TRUTH_FILENAME
 DATASET_FILE_PATH = DATA_DIR_PATH + DATASET_FILENAME
 SCHEMA_FILE_PATH = DATA_DIR_PATH + SCHEMA_FILENAME
 
+ANN_SEARCH_CMD_TEMPLATE = "SELECT id FROM vdb_bench.vdb_bench_collection ORDER BY vector ANN OF {vector} LIMIT 10;"
 
-class VectorStoreInCloud(ManagerTestFunctionsMixIn):
+
+class VectorStoreInCloudBase(ClusterTester):
     average_recall: float = 0.0
 
     def get_email_data(self):
@@ -45,47 +49,15 @@ class VectorStoreInCloud(ManagerTestFunctionsMixIn):
         s3_storage.download_file(link=f"{base_url}/{SCHEMA_FILENAME}", dst_dir=DATA_DIR_PATH)
         s3_storage.download_file(link=f"{base_url}/{DATASET_FILENAME}", dst_dir=DATA_DIR_PATH)
 
-    def run_vector_store_verification(self):
-        test_data = File(TEST_DATA_FILE_PATH).readlines()
-        ground_truth = File(GROUND_TRUTH_FILE_PATH).readlines()
-        assert len(test_data) == len(ground_truth), \
-            "Test data and ground truth files have different lengths, can't proceed with verification queries"
+    @cached_property
+    def test_data(self):
+        return File(TEST_DATA_FILE_PATH).readlines()
 
-        total_recall = 0
-        total_queries = 100
+    @cached_property
+    def ground_truth_data(self):
+        return File(GROUND_TRUTH_FILE_PATH).readlines()
 
-        cql_cmd_template = "SELECT id FROM vdb_bench.vdb_bench_collection ORDER BY vector ANN OF {vector} LIMIT 10;"
-        for query_num in range(1, total_queries + 1):
-            self.log.debug("Running verification request #%d", query_num)
-            index = random.randint(0, len(test_data) - 1)
-            vector_value = test_data[index]
-
-            with self.db_cluster.cql_connection_patient(self.db_cluster.nodes[0]) as session:
-                query = cql_cmd_template.format(vector=vector_value)
-                rows = session.execute(query).all()
-
-            actual_ids = [row.id for row in rows]
-            ground_truth_ids = ast.literal_eval(ground_truth[index])[:10]
-            assert len(actual_ids) == len(ground_truth_ids), \
-                f"Query #{query_num}: Mismatch in number of returned IDs ({len(actual_ids)}) " \
-                f"and ground truth IDs ({len(ground_truth_ids)})"
-
-            # Count how many elements from actual_ids are present in ground_truth_ids (order doesn't matter)
-            elements_present = sum(1 for actual_id in actual_ids if actual_id in ground_truth_ids)
-
-            query_recall = elements_present / len(actual_ids)
-            total_recall += query_recall
-
-            self.log.debug("Query #%d: %d/%d elements present, recall factor: %.2f",
-                           query_num, elements_present, len(actual_ids), query_recall)
-
-        average_recall = round(total_recall / total_queries, 3)
-        self.average_recall = average_recall
-
-        self.log.info("Average recall for %d verification queries: %f", total_queries, average_recall)
-        assert average_recall > 0.85, f"Average recall {average_recall} is below the expected threshold of 0.85"
-
-    def test_vector_store_in_cloud(self):
+    def prepare_vector_store_index(self):
         self.log.info("Download Vector Store test data from S3")
         self.download_vector_store_test_data_from_s3()
 
@@ -120,5 +92,105 @@ class VectorStoreInCloud(ManagerTestFunctionsMixIn):
         self.log.info("Sleep 120 seconds for indexes to be built")
         time.sleep(120)
 
+    def test_vector_store_recall(self, queries_num: Optional[int] = None, duration: Optional[int] = None):
+
+        total_recall = 0
+
+        def _run_ann_search():
+            nonlocal total_recall
+            index = random.randint(0, len(self.test_data) - 1)
+            vector_value = self.test_data[index]
+
+            with self.db_cluster.cql_connection_patient(self.db_cluster.nodes[0]) as session:
+                query = ANN_SEARCH_CMD_TEMPLATE.format(vector=vector_value)
+                self.log.debug("Running verification request #%d", query_num)
+                rows = session.execute(query).all()
+
+            actual_ids = [row.id for row in rows]
+            ground_truth_ids = ast.literal_eval(self.ground_truth_data[index])[:10]
+            assert len(actual_ids) == len(ground_truth_ids), \
+                f"Mismatch in number of returned IDs ({len(actual_ids)}) and ground truth IDs ({len(ground_truth_ids)})"
+
+            # Count how many elements from actual_ids are present in ground_truth_ids (order doesn't matter)
+            elements_present = sum(1 for actual_id in actual_ids if actual_id in ground_truth_ids)
+
+            query_recall = elements_present / len(actual_ids)
+            total_recall += query_recall
+
+            self.log.debug("Query #%d: %d/%d elements present, recall factor: %.2f",
+                           query_num, elements_present, len(actual_ids), query_recall)
+
+        assert (queries_num is not None) ^ (duration is not None), \
+            "Either queries_num or duration must be provided, but not both"
+
+        if queries_num is not None:
+            for query_num in range(1, queries_num + 1):
+                _run_ann_search()
+
+            overall_queries_num = queries_num
+        else:
+            query_num = 0
+            end_time = time.time() + duration
+            while time.time() < end_time:
+                query_num += 1
+                _run_ann_search()
+
+            overall_queries_num = query_num
+
+        average_recall = round(total_recall / overall_queries_num, 3)
+        self.average_recall = average_recall
+
+        self.log.info("Average recall for %d verification queries: %f", overall_queries_num, average_recall)
+        assert average_recall > 0.85, f"Average recall {average_recall} is below the expected threshold of 0.85"
+
+
+class VectorStoreInCloudSanity(VectorStoreInCloudBase):
+    def test_vector_store_sanity(self):
+        self.log.info("Prepare Vector Store data")
+        self.prepare_vector_store_index()
+
         self.log.info("Run Vector Store verification queries")
-        self.run_vector_store_verification()
+        self.test_vector_store_recall()
+
+
+class VectorStoreInCloudReplaceNode(VectorStoreInCloudBase):
+    def _define_vector_store_node_id(self):
+        self.db_cluster.define_vector_store_node_ids()
+
+    def test_replace_node_change_instance_type(self, instance_type_id: int):
+        self.log.debug("Start Vector Store verification queries in background thread")
+        recall_test_thread = Thread(target=self.test_vector_store_recall, kwargs={"duration": 300})
+        recall_test_thread.start()
+
+        server_id = random.choice(self.db_cluster.define_vector_store_node_id())
+
+        self.log.debug("Replace Vector Store node %s with new instance type ID %d", server_id, instance_type_id)
+        self.db_cluster.replace_vector_store_node(server_id=server_id, instance_type_id=instance_type_id)
+
+        recall_test_thread.join(timeout=300)
+
+    def test_replace_node_upgrade_vector_store_version(self):
+        pass
+
+    def test_replace_node_broken_instance(self):
+        vector_value = random.choice(self.test_data)
+        query = ANN_SEARCH_CMD_TEMPLATE.format(vector=vector_value)
+
+        # It will be run in background while node replacement is in progress
+        with self.db_cluster.cql_connection_patient(self.db_cluster.nodes[0]) as session:
+            session.execute(query)
+            time.sleep(1)
+
+    def test_vector_store_replace_node_in_cloud(self):
+        self.log.info("Prepare Vector Store data")
+        self.prepare_vector_store_index()
+
+        self.log.info("Run Vector Store verification BEFORE replacing a node")
+        self.test_vector_store_recall(queries_num=10)
+
+        self.log.info("Run node replacement")
+        instance_type_id = 62 if self.params.get("cluster_backend") == "aws" else 41
+        self.test_replace_node_change_instance_type(instance_type_id)
+
+        self.log.info("Run Vector Store verification AFTER replacing a node")
+        self.test_vector_store_recall(queries_num=10)
