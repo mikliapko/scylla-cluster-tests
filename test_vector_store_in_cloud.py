@@ -182,8 +182,9 @@ class VectorStoreInCloudReplaceNode(VectorStoreInCloudBase):
 
         def _run_ann_search():
             nonlocal failed_queries_num
+
             with self.db_cluster.cql_connection_patient(self.db_cluster.nodes[0], verbose=False) as session:
-                while True:
+                while not stop_thread:
                     try:
                         session.execute(query)
                     except cassandra.InvalidRequest as e:
@@ -194,23 +195,32 @@ class VectorStoreInCloudReplaceNode(VectorStoreInCloudBase):
         ann_search_thread = Thread(target=_run_ann_search)
         ann_search_thread.start()
 
-        self.log.info("vector-store should be stopped MANUALLY on server ID %s, sleeping 5 mins...", server_id)
-        time.sleep(300)
+        try:
+            self.log.info("vector-store should be stopped MANUALLY on server ID %s, sleeping 10 mins...", server_id)
+            # Wait for failures to start occurring (max 10 minutes)
+            end_time = time.time() + 600
+            while failed_queries_num == 0 and time.time() < end_time:
+                time.sleep(10)
 
-        failed_before_replacement = failed_queries_num
-        self.log.debug("Number of failed requests BEFORE node replacement: %d", failed_before_replacement)
-        assert failed_before_replacement > 0, "ANN search queries didn't fail after stopping vector-store service"
+            failed_before_replacement = failed_queries_num
+            self.log.debug("Number of failed requests BEFORE node replacement: %d", failed_before_replacement)
+            assert failed_before_replacement > 0, "ANN search queries didn't fail after stopping vector-store service"
 
-        self.log.info("vector-store service should be stopped MANUALLY on server ID %s", server_id)
-        self.db_cluster.replace_vector_store_node(server_id=server_id)
+            self.log.info("vector-store service should be stopped MANUALLY on server ID %s", server_id)
+            self.db_cluster.replace_vector_store_node(server_id=server_id)
 
-        failed_after_replacement = failed_queries_num
-        self.log.debug("Number of failed requests AFTER node replacement: %d", failed_after_replacement)
-        assert failed_after_replacement > failed_before_replacement, \
-            "ANN search queries didn't fail during node replacement"
+            failed_after_replacement = failed_queries_num
+            self.log.debug("Number of failed requests AFTER node replacement: %d", failed_after_replacement)
+            assert failed_after_replacement > failed_before_replacement, \
+                "ANN search queries didn't fail during node replacement"
 
-        ann_search_thread.join(timeout=120)
-        assert failed_after_replacement == failed_queries_num, "ANN search queries are still failing after node replace"
+            self.log.debug("Run ANN queries for 1 more minute after replacement to make sure no failures occur")
+            time.sleep(60)
+            assert failed_after_replacement == failed_queries_num, "ANN search queries are still failing after node replace"
+
+        finally:
+            stop_thread = True
+            ann_search_thread.join(timeout=30)
 
     def test_vector_store_replace_node_in_cloud(self):
         self.log.info("Prepare Vector Store data")
