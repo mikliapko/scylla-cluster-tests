@@ -2029,7 +2029,7 @@ class ManagerBackupRestoreConcurrentTests(ManagerTestFunctionsMixIn):
         read_stress_thread.join()
 
 
-class VectorStoreInCloud(ManagerRestoreBenchmarkTests):
+class VectorSearchInCloud(ManagerRestoreBenchmarkTests):
     def testDown(self):
         super().tearDown()
 
@@ -2045,7 +2045,7 @@ class VectorStoreInCloud(ManagerRestoreBenchmarkTests):
                     resource_to_add=f"arn:aws:s3:::{location.split(':')[-1]}",
                 )
 
-    def test_vector_store_in_cloud(self):
+    def test_vector_search_in_cloud(self):
         self.log.info("Initialize Scylla Manager")
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
@@ -2084,8 +2084,8 @@ class VectorStoreInCloud(ManagerRestoreBenchmarkTests):
         time.sleep(120)
 
         self.log.info("Execute verification requests")
-        test_data = File("data_dir/vector_store/test_data.txt").readlines()
-        ground_truth = File("data_dir/vector_store/ground_truth.txt").readlines()
+        test_data = File("data_dir/vector_search/test_data.txt").readlines()
+        ground_truth = File("data_dir/vector_search/ground_truth.txt").readlines()
         assert len(test_data) == len(ground_truth), \
             "Test data and ground truth files have different lengths, can't proceed with verification queries"
 

@@ -12,7 +12,7 @@ from sdcm.tester import ClusterTester
 from sdcm.utils.common import S3Storage
 from sdcm.utils.file import File
 
-# Vector Store test data files
+# Vector Search test data files
 BUCKET_NAME = "vector-store-in-cloud"
 
 TEST_DATA_FILENAME = "test_data.txt"
@@ -20,7 +20,7 @@ GROUND_TRUTH_FILENAME = "ground_truth.txt"
 DATASET_FILENAME = "dataset.txt"
 SCHEMA_FILENAME = "schema.json"
 
-DATA_DIR_PATH = "data_dir/vector_store/"
+DATA_DIR_PATH = "data_dir/vector_search/"
 TEST_DATA_FILE_PATH = DATA_DIR_PATH + TEST_DATA_FILENAME
 GROUND_TRUTH_FILE_PATH = DATA_DIR_PATH + GROUND_TRUTH_FILENAME
 DATASET_FILE_PATH = DATA_DIR_PATH + DATASET_FILENAME
@@ -29,7 +29,7 @@ SCHEMA_FILE_PATH = DATA_DIR_PATH + SCHEMA_FILENAME
 ANN_SEARCH_CMD_TEMPLATE = "SELECT id FROM vdb_bench.vdb_bench_collection ORDER BY vector ANN OF {vector} LIMIT 10;"
 
 
-class VectorStoreInCloudBase(ClusterTester):
+class VectorSearchInCloudBase(ClusterTester):
     average_recall: float = 0.0
 
     def get_email_data(self):
@@ -41,7 +41,7 @@ class VectorStoreInCloudBase(ClusterTester):
         return email_data
 
     @staticmethod
-    def download_vector_store_test_data_from_s3():
+    def download_vector_search_test_data_from_s3():
         s3_storage = S3Storage(bucket=BUCKET_NAME)
 
         base_url = f"https://{BUCKET_NAME}.s3.amazonaws.com"
@@ -59,9 +59,9 @@ class VectorStoreInCloudBase(ClusterTester):
     def ground_truth_data(self):
         return File(GROUND_TRUTH_FILE_PATH).readlines()
 
-    def prepare_vector_store_index(self):
-        self.log.info("Download Vector Store test data from S3")
-        self.download_vector_store_test_data_from_s3()
+    def prepare_vector_search_index(self):
+        self.log.info("Download Vector Search test data from S3")
+        self.download_vector_search_test_data_from_s3()
 
         self.log.info("Create schema applying CQL statements")
         ks_statements, other_statements = get_schema_create_statements_from_file(schema_file_path=SCHEMA_FILE_PATH)
@@ -94,7 +94,7 @@ class VectorStoreInCloudBase(ClusterTester):
         self.log.info("Sleep 120 seconds for indexes to be built")
         time.sleep(120)
 
-    def test_vector_store_recall(self, queries_num: Optional[int] = None, duration: Optional[int] = None):
+    def test_vector_search_recall(self, queries_num: Optional[int] = None, duration: Optional[int] = None):
 
         assert (queries_num is not None) ^ (duration is not None), \
             "Either queries_num or duration must be provided, but not both"
@@ -146,27 +146,27 @@ class VectorStoreInCloudBase(ClusterTester):
         assert average_recall > 0.85, f"Average recall {average_recall} is below the expected threshold of 0.85"
 
 
-class VectorStoreInCloudSanity(VectorStoreInCloudBase):
-    def test_vector_store_sanity(self):
-        self.log.info("Prepare Vector Store data")
-        self.prepare_vector_store_index()
+class VectorSearchInCloudSanity(VectorSearchInCloudBase):
+    def test_vector_search_sanity(self):
+        self.log.info("Prepare Vector Search data")
+        self.prepare_vector_search_index()
 
-        self.log.info("Run Vector Store verification queries")
-        self.test_vector_store_recall(queries_num=100)
+        self.log.info("Run Vector Search verification queries")
+        self.test_vector_search_recall(queries_num=100)
 
 
-class VectorStoreInCloudReplaceNode(VectorStoreInCloudBase):
+class VectorSearchInCloudReplaceNode(VectorSearchInCloudBase):
     def test_replace_healthy_node(self,
                                   server_id: str,
                                   instance_type_id: Optional[int] = None,
                                   version: Optional[str] = None):
-        self.log.debug("Start Vector Store verification queries in background thread")
-        recall_test_thread = Thread(target=self.test_vector_store_recall, kwargs={"duration": 300})
+        self.log.debug("Start Vector Search verification queries in background thread")
+        recall_test_thread = Thread(target=self.test_vector_search_recall, kwargs={"duration": 300})
         recall_test_thread.start()
 
-        self.log.debug("Replace Vector Store node %s - new instance type ID %s, new version %s",
+        self.log.debug("Replace Vector Search node %s - new instance type ID %s, new version %s",
                        server_id, instance_type_id, version)
-        self.db_cluster.replace_vector_store_node(
+        self.db_cluster.replace_vector_search_node(
             server_id=server_id,
             instance_type_id=instance_type_id,
             service_version=version,
@@ -207,7 +207,7 @@ class VectorStoreInCloudReplaceNode(VectorStoreInCloudBase):
             assert failed_before_replacement > 0, "ANN search queries didn't fail after stopping vector-store service"
 
             self.log.info("vector-store service should be stopped MANUALLY on server ID %s", server_id)
-            self.db_cluster.replace_vector_store_node(server_id=server_id)
+            self.db_cluster.replace_vector_search_node(server_id=server_id)
 
             failed_after_replacement = failed_queries_num
             self.log.debug("Number of failed requests AFTER node replacement: %d", failed_after_replacement)
@@ -222,11 +222,11 @@ class VectorStoreInCloudReplaceNode(VectorStoreInCloudBase):
             stop_thread = True
             ann_search_thread.join(timeout=30)
 
-    def test_vector_store_replace_node_in_cloud(self):
-        self.log.info("Prepare Vector Store data")
-        self.prepare_vector_store_index()
+    def test_vector_search_replace_node_in_cloud(self):
+        self.log.info("Prepare Vector Search data")
+        self.prepare_vector_search_index()
 
-        vs_nodes_server_ids = self.db_cluster.define_vector_store_node_ids()
+        vs_nodes_server_ids = self.db_cluster.define_vector_search_node_ids()
 
         test = "Run VS node replacement, no changes to instance type or version"
         with self.subTest(test):
