@@ -28,6 +28,11 @@ SCHEMA_FILE_PATH = DATA_DIR_PATH + SCHEMA_FILENAME
 
 ANN_SEARCH_CMD_TEMPLATE = "SELECT id FROM vdb_bench.vdb_bench_collection ORDER BY vector ANN OF {vector} LIMIT 10;"
 
+VECTOR_SEARCH_INSTANCE_TYPES = {
+    "aws": {"t4g.small": 175, "t4g.medium": 176, "r7g.medium": 177},
+    "gce": {"e2-small": 178, "e2-medium": 179, "n4-highmem-2": 180}
+}
+
 
 class VectorSearchInCloudBase(ClusterTester):
     average_recall: float = 0.0
@@ -147,7 +152,7 @@ class VectorSearchInCloudBase(ClusterTester):
 
 
 class VectorSearchInCloudSanity(VectorSearchInCloudBase):
-    def test_vector_search_sanity(self):
+    def test_vector_search_in_cloud_sanity(self):
         self.log.info("Prepare Vector Search data")
         self.prepare_vector_search_index()
 
@@ -156,10 +161,10 @@ class VectorSearchInCloudSanity(VectorSearchInCloudBase):
 
 
 class VectorSearchInCloudReplaceNode(VectorSearchInCloudBase):
-    def test_replace_healthy_node(self,
-                                  server_id: str,
-                                  instance_type_id: Optional[int] = None,
-                                  version: Optional[str] = None):
+    def _test_replace_healthy_node(self,
+                                   server_id: str,
+                                   instance_type_id: Optional[int] = None,
+                                   version: Optional[str] = None):
         self.log.debug("Start Vector Search verification queries in background thread")
         recall_test_thread = Thread(target=self.test_vector_search_recall, kwargs={"duration": 300})
         recall_test_thread.start()
@@ -174,19 +179,41 @@ class VectorSearchInCloudReplaceNode(VectorSearchInCloudBase):
 
         recall_test_thread.join(timeout=300)
 
-    def test_replace_broken_node(self, server_id: str):
+    def test_vector_search_in_cloud_replace_healthy_node(self):
+        self.log.info("Prepare Vector Search data")
+        self.prepare_vector_search_index()
+
+        vs_nodes_server_ids = iter(self.db_cluster.define_vector_search_node_ids())
+
+        test_desc = "Run VS node replacement, no changes to instance type or version"
+        with self.subTest(test_desc):
+            self.log.info(test_desc)
+            self._test_replace_healthy_node(server_id=next(vs_nodes_server_ids))
+
+        vs_instance_type_ids = list(VECTOR_SEARCH_INSTANCE_TYPES[self.params.get("cluster_backend")].values())
+        for instance_type_id in random.sample(vs_instance_type_ids, 2):
+            test_desc = "Run VS node replacement changing instance type ID to %d" % instance_type_id
+            with self.subTest(test_desc):
+                self.log.info(test_desc)
+                self._test_replace_healthy_node(
+                    server_id=next(vs_nodes_server_ids),
+                    instance_type_id=instance_type_id,
+                )
+
+    def _test_replace_broken_node(self, server_id: str):
         vector_value = random.choice(self.test_data)
         query = ANN_SEARCH_CMD_TEMPLATE.format(vector=vector_value)
 
-        failed_queries_num = 0
+        failed_queries_num, passed_queries_num = 0, 0
 
         def _run_ann_search():
-            nonlocal failed_queries_num
+            nonlocal failed_queries_num, passed_queries_num
 
             with self.db_cluster.cql_connection_patient(self.db_cluster.nodes[0], verbose=False) as session:
                 while not stop_thread:
                     try:
                         session.execute(query)
+                        passed_queries_num += 1
                     except cassandra.InvalidRequest as e:
                         self.log.warning(f"ANN search request failed: {e}")
                         failed_queries_num += 1
@@ -202,47 +229,44 @@ class VectorSearchInCloudReplaceNode(VectorSearchInCloudBase):
             while failed_queries_num == 0 and time.time() < end_time:
                 time.sleep(10)
 
-            failed_before_replacement = failed_queries_num
-            self.log.debug("Number of failed requests BEFORE node replacement: %d", failed_before_replacement)
-            assert failed_before_replacement > 0, "ANN search queries didn't fail after stopping vector-store service"
+            passed_before_replace = passed_queries_num
+            failed_before_replace = failed_queries_num
+            self.log.debug("Before replacement requests status: passed - %d, failed - %d",
+                           passed_before_replace, failed_before_replace)
+            assert failed_before_replace > 0, "ANN search queries didn't fail after stopping vector-store service"
 
-            self.log.info("vector-store service should be stopped MANUALLY on server ID %s", server_id)
+            self.log.info("Replace Vector Search node %s", server_id)
             self.db_cluster.replace_vector_search_node(server_id=server_id)
 
-            failed_after_replacement = failed_queries_num
-            self.log.debug("Number of failed requests AFTER node replacement: %d", failed_after_replacement)
-            assert failed_after_replacement > failed_before_replacement, \
-                "ANN search queries didn't fail during node replacement"
+            passed_after_replace = passed_queries_num
+            failed_after_replace = failed_queries_num
+            self.log.debug("After replacement requests status: passed - %d, failed - %d",
+                           passed_after_replace, failed_after_replace)
+            assert passed_after_replace > passed_before_replace, "No ANN search queries passed during node replacement"
+            assert failed_after_replace > failed_before_replace, "ANN search didn't fail during node replacement"
 
             self.log.debug("Run ANN queries for 1 more minute after replacement to make sure no failures occur")
             time.sleep(60)
-            assert failed_after_replacement == failed_queries_num, "ANN search queries are still failing after node replace"
+            assert failed_after_replace == failed_queries_num, "ANN search is still failing after node replacement"
 
         finally:
             stop_thread = True
             ann_search_thread.join(timeout=30)
 
-    def test_vector_search_replace_node_in_cloud(self):
+    def test_vector_search_in_cloud_replace_broken_node(self):
+        """
+        GIVEN a Cloud cluster with Vector Search nodes
+        WHEN replacing a broken Vector Search node (vector-store service stopped)
+        THEN the operation is successful and Vector Search is fully functional after replacement;
+             during the replacement some availability loss is expected for now (when the request hits the broken node)
+
+        Note: the test scenario requires MANUAL stop of vector-store service on one of the VS nodes since ssh access
+              to VS node is not supported by siren-tests + SCT integration at the moment
+        """
         self.log.info("Prepare Vector Search data")
         self.prepare_vector_search_index()
 
         vs_nodes_server_ids = self.db_cluster.define_vector_search_node_ids()
 
-        test = "Run VS node replacement, no changes to instance type or version"
-        with self.subTest(test):
-            self.log.info(test)
-            self.test_replace_healthy_node(server_id=vs_nodes_server_ids[0])
-
-        test = "Run VS node replacement changing instance type"
-        with self.subTest(test):
-            self.log.info(test)
-            instance_type_id = 62 if self.params.get("cluster_backend") == "aws" else 41
-            self.test_replace_healthy_node(
-                server_id=vs_nodes_server_ids[1],
-                instance_type_id=instance_type_id,
-            )
-
-        test = "Run VS node replacement for broken instance"
-        with self.subTest(test):
-            self.log.info(test)
-            self.test_replace_broken_node(server_id=vs_nodes_server_ids[2])
+        self.log.info("Run VS node replacement for broken instance")
+        self._test_replace_broken_node(server_id=vs_nodes_server_ids[0])
