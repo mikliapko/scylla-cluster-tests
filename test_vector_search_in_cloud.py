@@ -183,7 +183,7 @@ class VectorSearchInCloudReplaceNode(VectorSearchInCloudBase):
         self.log.info("Prepare Vector Search data")
         self.prepare_vector_search_index()
 
-        vs_nodes_server_ids = iter(self.db_cluster.define_vector_search_node_ids())
+        vs_nodes_server_ids = iter(self.params.get("vector_search_node_ids"))
 
         test_desc = "Run VS node replacement, no changes to instance type or version"
         with self.subTest(test_desc):
@@ -191,8 +191,10 @@ class VectorSearchInCloudReplaceNode(VectorSearchInCloudBase):
             self._test_replace_healthy_node(server_id=next(vs_nodes_server_ids))
 
         vs_instance_type_ids = list(VECTOR_SEARCH_INSTANCE_TYPES[self.params.get("cluster_backend")].values())
-        for instance_type_id in random.sample(vs_instance_type_ids, 2):
-            test_desc = "Run VS node replacement changing instance type ID to %d" % instance_type_id
+        current_vs_instance_type = self.params.get("vector_search_node_type_id")
+        vs_instance_type_ids.remove(current_vs_instance_type)  # Avoid replacing with the same type
+        for instance_type_id in vs_instance_type_ids:
+            test_desc = f"Run VS node replacement changing instance type ID to {instance_type_id}"
             with self.subTest(test_desc):
                 self.log.info(test_desc)
                 self._test_replace_healthy_node(
@@ -266,7 +268,7 @@ class VectorSearchInCloudReplaceNode(VectorSearchInCloudBase):
         self.log.info("Prepare Vector Search data")
         self.prepare_vector_search_index()
 
-        vs_nodes_server_ids = self.db_cluster.define_vector_search_node_ids()
+        vs_nodes_server_ids = self.params.get("vector_search_node_ids")
 
         self.log.info("Run VS node replacement for broken instance")
         self._test_replace_broken_node(server_id=vs_nodes_server_ids[0])
