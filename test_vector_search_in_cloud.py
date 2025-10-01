@@ -207,6 +207,7 @@ class VectorSearchInCloudReplaceNode(VectorSearchInCloudBase):
         query = ANN_SEARCH_CMD_TEMPLATE.format(vector=vector_value)
 
         failed_queries_num, passed_queries_num = 0, 0
+        stop_thread = False
 
         def _run_ann_search():
             nonlocal failed_queries_num, passed_queries_num
