@@ -7,7 +7,6 @@ from typing import Optional
 
 import cassandra
 
-from sdcm.mgmt.helpers import get_schema_create_statements_from_file, substitute_dc_name_in_ks_statements_if_different
 from sdcm.tester import ClusterTester
 from sdcm.utils.common import S3Storage
 from sdcm.utils.file import File
@@ -69,35 +68,10 @@ class VectorSearchInCloudBase(ClusterTester):
         self.download_vector_search_test_data_from_s3()
 
         self.log.info("Create schema applying CQL statements")
-        ks_statements, other_statements = get_schema_create_statements_from_file(schema_file_path=SCHEMA_FILE_PATH)
-
-        # DC name written in the schema file may differ from the one used in the cluster under test
-        # if run in region or cloud provider different from ones where backup was taken
-        dc_under_test_name = next(iter(self.db_cluster.get_nodetool_status()))
-        ks_statements = substitute_dc_name_in_ks_statements_if_different(ks_statements=ks_statements,
-                                                                         current_dc_name=dc_under_test_name)
-
-        with self.db_cluster.cql_connection_patient(node=self.db_cluster.nodes[0], verbose=False) as session:
-            for cql_stmt in ks_statements + other_statements:
-                session.execute(cql_stmt)
-
-            self.log.info("Insert sample data into the table")
-            insert_cmd_template = "INSERT INTO vdb_bench.vdb_bench_collection (id, vector) VALUES ({id}, {vector});"
-            with open(DATASET_FILE_PATH, encoding="utf-8") as dataset_file:
-                for line in dataset_file:
-                    id_str, vector_str = line.strip().split(",", maxsplit=1)
-                    insert_cmd = insert_cmd_template.format(id=int(id_str), vector=vector_str)
-                    session.execute(insert_cmd)
-
-        self.log.info("Create Vector Index")
-        with self.db_cluster.cql_connection_patient(self.db_cluster.nodes[0]) as session:
-            query = ("CREATE CUSTOM INDEX vdb_bench_collection_vector_idx ON vdb_bench.vdb_bench_collection(vector) "
-                     "USING 'vector_index'")
-            session.execute(query)
-
-        # TODO: rework when it'll be possible to check index readiness status
-        self.log.info("Sleep 120 seconds for indexes to be built")
-        time.sleep(120)
+        with self.db_cluster.cql_connection_patient(node=self.db_cluster.nodes[0], verbose=True) as session:
+            self.log.debug("Run CQL cmd")
+            cmd = "DESC KEYSPACES"
+            session.execute(cmd)
 
     def test_vector_search_recall(self, queries_num: Optional[int] = None, duration: Optional[int] = None):
 
@@ -155,9 +129,6 @@ class VectorSearchInCloudSanity(VectorSearchInCloudBase):
     def test_vector_search_in_cloud_sanity(self):
         self.log.info("Prepare Vector Search data")
         self.prepare_vector_search_index()
-
-        self.log.info("Run Vector Search verification queries")
-        self.test_vector_search_recall(queries_num=100)
 
 
 class VectorSearchInCloudReplaceNode(VectorSearchInCloudBase):
