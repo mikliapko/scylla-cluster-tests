@@ -96,8 +96,8 @@ class VectorSearchInCloudBase(ClusterTester):
             session.execute(query)
 
         # TODO: rework when it'll be possible to check index readiness status
-        self.log.info("Sleep 120 seconds for indexes to be built")
-        time.sleep(120)
+        self.log.info("Sleep 180 seconds for indexes to be built")
+        time.sleep(180)
 
     def test_vector_search_recall(self, queries_num: Optional[int] = None, duration: Optional[int] = None):
 
