@@ -70,7 +70,7 @@ from sdcm.cluster_k8s import (
 from sdcm.db_stats import PrometheusDBStats
 from sdcm.log import SDCMAdapter
 from sdcm.logcollector import save_kallsyms_map
-from sdcm.mgmt.common import TaskStatus, ScyllaManagerError, get_persistent_snapshots, ObjectStorageUploadMode
+from sdcm.mgmt.common import TaskStatus, ScyllaManagerError, get_persistent_snapshots, BackupMethod
 from sdcm.mgmt.operations import run_manager_backup
 from sdcm.mgmt.argus_report import report_manager_backup_results_to_argus
 from sdcm.mgmt.helpers import get_dc_name_from_ks_statement, get_schema_create_statements_from_snapshot
@@ -2937,16 +2937,16 @@ class Nemesis(NemesisFlags):
         disrupt_func = getattr(self, disrupt_func_name)
         disrupt_func()
 
-    def _run_manager_backup(self, mgr_cluster, object_storage_upload_mode: ObjectStorageUploadMode, timeout: int) -> BackupTask:
+    def _run_manager_backup(self, mgr_cluster, method: BackupMethod, timeout: int) -> BackupTask:
         with self.action_log_scope("Scylla Manager backup"):
-            task = run_manager_backup(mgr_cluster, self.tester.locations, object_storage_upload_mode, timeout)
+            task = run_manager_backup(mgr_cluster, self.tester.locations, method, timeout)
         return task
 
-    def _manager_backup_and_report(self, object_storage_upload_mode: ObjectStorageUploadMode, label) -> BackupTask:
+    def _manager_backup_and_report(self, method: BackupMethod, label) -> BackupTask:
         """
         Run a backup using Scylla Manager and report the result to Argus.
 
-        :param object_storage_upload_mode: The upload mode for object storage (e.g., RCLONE or NATIVE).
+        :param method: Backup method (e.g., rclone, native or auto).
         :param label: A label for reporting.
         :return: BackupTask object representing the backup operation.
         """
@@ -2955,22 +2955,22 @@ class Nemesis(NemesisFlags):
         mgr_cluster = self.tester.ensure_and_get_cluster(manager_tool)
         decorated = latency_calculator_decorator(legend="Scylla-Manager Backup", cycle_name=label)(
             self._run_manager_backup)
-        task = decorated(mgr_cluster, object_storage_upload_mode, timeout)
+        task = decorated(mgr_cluster, method, timeout)
         report_manager_backup_results_to_argus(self.tester.monitors, self.tester.test_config, label, task, mgr_cluster)
         return task
 
-    def disrupt_manager_backup(self, object_storage_upload_mode: ObjectStorageUploadMode, label):
+    def disrupt_manager_backup(self, method: BackupMethod, label):
         """
         Perform a Manager backup as a nemesis.
         Deletes created snapshot at end.
         Args:
-            object_storage_upload_mode: The upload mode (e.g., RCLONE or NATIVE).
+            method: Backup method (e.g., rclone, native or auto).
             label: Label for reporting to Argus.
         """
 
         time_postfix = datetime.datetime.now().strftime("_%m%d_%H%M")
         label_with_time = f"{label}{time_postfix}"
-        task = self._manager_backup_and_report(object_storage_upload_mode, label_with_time)
+        task = self._manager_backup_and_report(method, label_with_time)
         with self.action_log_scope("Delete Manager backup snapshot"):
             task.delete_backup_snapshot()
 
@@ -6858,7 +6858,7 @@ class ManagerRcloneBackup(Nemesis):
     supports_high_disk_utilization = False
 
     def disrupt(self):
-        self.disrupt_manager_backup(object_storage_upload_mode=ObjectStorageUploadMode.RCLONE, label='rclone_backup')
+        self.disrupt_manager_backup(method=BackupMethod.RCLONE, label='rclone_backup')
 
 
 class ManagerNativeBackup(Nemesis):
@@ -6867,7 +6867,7 @@ class ManagerNativeBackup(Nemesis):
     supports_high_disk_utilization = False
 
     def disrupt(self):
-        self.disrupt_manager_backup(object_storage_upload_mode=ObjectStorageUploadMode.NATIVE, label='native_backup')
+        self.disrupt_manager_backup(method=BackupMethod.NATIVE, label='native_backup')
 
 
 COMPLEX_NEMESIS = [NoOpMonkey, ScyllaCloudLimitedChaosMonkey,
