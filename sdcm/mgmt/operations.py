@@ -12,6 +12,7 @@ from invoke import exceptions
 
 from sdcm.mgmt import TaskStatus
 from sdcm.mgmt.cli import ScyllaManagerTool
+from sdcm.mgmt.common import BackupMethod
 from sdcm import mgmt
 from sdcm.exceptions import FilesNotCorrupted
 from sdcm.remote import shell_script_cmd, LOCALRUNNER
@@ -668,6 +669,13 @@ class ManagerTestFunctionsMixIn(
 
         # FIXME: Make it works with multiple locations or file a bug for scylla-manager.
         return [f"{backend}:{location}" for location in buckets[:1]]
+
+    @cached_property
+    def backup_method(self) -> str | None:
+        """Get the backup method to be used for the backup task - rclone, native or auto"""
+        if method := self.params.get("mgmt_backup_method"):
+            return BackupMethod[method.upper()]
+        return None
 
     def get_dc_mapping(self) -> str | None:
         """Get the datacenter mapping string for the restore task if there are > 1 DCs (multiDC) in the cluster.
