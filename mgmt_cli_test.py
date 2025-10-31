@@ -405,7 +405,7 @@ class ManagerRepairTests(ManagerTestFunctionsMixIn):
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
-        rf = self.get_rf_based_on_nodes_number() if len(self.params.region_names) > 1 else 2
+        rf = self.get_rf_based_on_nodes_number() if len(self.params.region_names) > 1 else 3
         self.create_keyspace_and_basic_table(self.NETWORKSTRATEGY_KEYSPACE_NAME, replication_factor=rf)
 
         self.create_keyspace_and_basic_table(self.LOCALSTRATEGY_KEYSPACE_NAME, replication_factor=0)
