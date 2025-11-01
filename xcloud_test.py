@@ -22,10 +22,13 @@ class XcloudScaleOutTest(LongevityTest):
 
     # The expected max time for scale out successful completion is 40 minutes
     @retrying(n=8, sleep_time=60*5, allowed_exceptions=(Retry, AssertionError))
-    def verify_cluster_scaled_out(self, nodes):
+    def verify_cluster_scaled_out(self):
+        self.log.info("Get list of nodes after cluster is populated with data")
+        updated_nodes = self.db_cluster.get_nodetool_status(dc_aware=False)
+
         self.log.info(f"Verify the number of nodes after scale out is 6 and all of them are 'UP'")
-        assert len(nodes) == 6, "Initial number of nodes is not 3"
-        for node in nodes:
+        assert len(updated_nodes) == 6, "Initial number of nodes is not 3"
+        for node in updated_nodes:
             assert node.status == HostStatus.UP, "Not all nodes status is 'UP'"
 
     def test_xcloud_scale_out(self):
@@ -40,7 +43,4 @@ class XcloudScaleOutTest(LongevityTest):
         for stress in stress_queue:
             self.verify_stress_thread(stress)
 
-        self.log.info("Get list of nodes after cluster is populated with data")
-        updated_nodes = self.db_cluster.get_nodetool_status(dc_aware=False)
-
-        self.verify_cluster_scaled_out(updated_nodes)
+        self.verify_cluster_scaled_out()
