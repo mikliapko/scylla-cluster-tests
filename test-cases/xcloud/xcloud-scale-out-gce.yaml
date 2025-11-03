@@ -10,7 +10,7 @@ user_prefix: 'xcloud-scale-out-test-gce'
 
 scaling_config: {
     "InstanceFamilies": [
-      "n2"
+      "n2-highmem"
     ],
     "Mode": "xcloud",
     "Policies": {
