@@ -25,10 +25,12 @@ class XcloudScaleOutTest(LongevityTest):
     def verify_cluster_scaled_out(self):
         self.log.info("Get list of nodes after cluster is populated with data")
         updated_nodes = self.db_cluster.get_nodetool_status(dc_aware=False)
+        self.log.info(f"Updated nodes: {updated_nodes}")
 
         self.log.info(f"Verify the number of nodes after scale out is 6 and all of them are 'UP'")
-        assert len(updated_nodes) == 6, "Initial number of nodes is not 3"
+        assert len(updated_nodes) == 6, "Initial number of nodes is not 6"
         for node in updated_nodes:
+            self.log.info(f"Verify node: {node}")
             assert node.status == HostStatus.UP, "Not all nodes status is 'UP'"
 
     def test_xcloud_scale_out(self):
