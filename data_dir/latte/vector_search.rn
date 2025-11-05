@@ -7,7 +7,8 @@ const INDEX = latte::param!("index", "vdb_bench_collection_vector_idx");
 const REPLICATION_FACTOR = latte::param!("replication_factor", 1);
 const TABLETS_ENABLED = latte::param!("tablets_enabled", false);
 const ANN_LIMIT = latte::param!("ann_limit", 10);
-const MIN_RECALL_THRESHOLD = latte::param!("min_recall_threshold", 0.85);
+const MIN_RECALL_THRESHOLD = latte::param!("min_recall_threshold", 0.9);
+const VECTOR_DATA_DIR = latte::param!("vector_data_dir", "data_dir/vector_search/");
 
 const P_STMT = #{
     "INSERT": #{
@@ -39,20 +40,6 @@ pub async fn schema(db) {
     db.execute(`CREATE CUSTOM INDEX ${INDEX} ON ${KEYSPACE}.${TABLE}(vector) USING 'vector_index'`).await?;
 }
 
-fn read_and_filter_lines(file_path) {
-    let content = fs::read_to_string(file_path)?;
-    let lines = content.split('\n').collect::<Vec>();
-
-    let non_empty_lines = [];
-    for line in lines {
-        if !line.is_empty() {
-            non_empty_lines.push(line);
-        }
-    }
-
-    Ok(non_empty_lines)
-}
-
 pub async fn erase(db) {
    db.execute(`TRUNCATE TABLE ${KEYSPACE}.${TABLE}`).await?;
 }
@@ -68,28 +55,30 @@ pub async fn prepare(db) {
     db.data.recalls = [];  // Initialize recalls array
 }
 
+////////////////////
+// User functions //
+////////////////////
 
-pub async fn load(db, i) {
+pub async fn insert(db, i) {
     // Get the line for this iteration (dataset loaded in prepare phase)
     let line = db.data.dataset_lines[i];
 
     // Parse the line to extract id and vector
     let parsed = parse_dataset_line_into_id_and_vector_string(line)?;
-    let vector_values = parse_bracketed_comma_separated_f64_vector(parsed.vector_string)?;
+    let vector_values = parse_bracketed_comma_separated_vector(parsed.vector_string)?;
 
     let params = #{ "id": parsed.id, "vector": vector_values };
     db.execute_prepared(P_STMT.INSERT.NAME, params).await?;
 }
 
-pub async fn run(db, i) {
+pub async fn validate_average_recall(db, i) {
     // Get a random vector from test_data
     let random_idx = latte::hash(i) % db.data.test_vectors.len();
-
     let vector_string = db.data.test_vectors[random_idx].trim();
     let ground_truth_ids = db.data.ground_truth_ids[random_idx];
 
     // Parse vector string into list of floats
-    let vector = parse_bracketed_comma_separated_f64_vector(vector_string)?;
+    let vector = parse_bracketed_comma_separated_vector(vector_string)?;
 
     // Execute ANN query with the random vector
     let params = #{ "vector": vector };
@@ -106,15 +95,13 @@ pub async fn run(db, i) {
         actual_ids.push(row.id);
     }
 
-    // Take first N IDs (matching ANN_LIMIT)
+    // Take first N IDs of ground truth (matching ANN_LIMIT)
     let expected_ids = [];
     for j in 0..ANN_LIMIT {
-        if j < ground_truth_ids.len() {
-            expected_ids.push(ground_truth_ids[j]);
-        }
+        expected_ids.push(ground_truth_ids[j]);
     }
 
-    // Calculate recall: count how many actual IDs are in expected IDs
+    // Count how many actual IDs are in expected IDs
     let elements_present = 0;
     for actual_id in actual_ids {
         if contains(expected_ids, actual_id) {
@@ -131,14 +118,15 @@ pub async fn run(db, i) {
     // Store recall in context for later aggregation
     db.data.recalls.push(query_recall);
 
-    // Print machine-readable progress every 100 queries for external parsing
-    if i % 100 == 0 && i > 0 {
+    // Every 100 queries, compute average recall and assert it's above threshold
+    if i % 100 == 0 {
         let sum = 0.0;
         for r in db.data.recalls {
             sum = sum + r;
         }
         let avg = sum / db.data.recalls.len() as f64;
         println!("RECALL_PROGRESS: queries={} avg_recall={:.3} threshold={}", db.data.recalls.len(), avg, MIN_RECALL_THRESHOLD);
+        assert!(avg > MIN_RECALL_THRESHOLD);
     }
 }
 
@@ -153,6 +141,20 @@ fn contains(list, item) {
         }
     }
     false
+}
+
+fn read_and_filter_lines(file_path) {
+    let content = fs::read_to_string(file_path)?;
+    let lines = content.split('\n').collect::<Vec>();
+
+    let non_empty_lines = [];
+    for line in lines {
+        if !line.is_empty() {
+            non_empty_lines.push(line);
+        }
+    }
+
+    Ok(non_empty_lines)
 }
 
 fn strip_surrounding_brackets(s) {
@@ -186,7 +188,7 @@ fn parse_bracketed_comma_separated_i64_list(s) {
     Ok(ids)
 }
 
-fn parse_bracketed_comma_separated_f64_vector(vector_string) {
+fn parse_bracketed_comma_separated_vector(vector_string) {
     // Remove brackets and split by comma to parse vector of floats
     let cleaned = strip_surrounding_brackets(vector_string);
 
@@ -223,22 +225,19 @@ fn parse_dataset_line_into_id_and_vector_string(line) {
 }
 
 pub async fn prepare_dataset(db) {
-    let dataset_path = "data_dir/vector_search/dataset.txt";
+    let dataset_path = VECTOR_DATA_DIR + "dataset.txt";
     let lines = read_and_filter_lines(dataset_path)?;
+    println!("Loaded {} dataset lines", lines.len());
 
-    // Store lines in context data for use in load()
     db.data.dataset_lines = lines;
-
-    // Set how many rows to insert
-    db.load_cycle_count = db.data.dataset_lines.len();
-    println!("Loaded {} lines from dataset", db.data.dataset_lines.len());
 
     Ok(())
 }
 
 pub async fn prepare_test_vectors(db) {
-    let test_data_path = "data_dir/vector_search/test_data.txt";
+    let test_data_path = VECTOR_DATA_DIR + "test_data.txt";
     let lines = read_and_filter_lines(test_data_path)?;
+    println!("Loaded {} test vector lines", lines.len());
 
     db.data.test_vectors = lines;
 
@@ -246,7 +245,7 @@ pub async fn prepare_test_vectors(db) {
 }
 
 pub async fn prepare_ground_truth_ids(db) {
-    let ground_truth_path = "data_dir/vector_search/ground_truth.txt";
+    let ground_truth_path = VECTOR_DATA_DIR + "ground_truth.txt";
     let lines = read_and_filter_lines(ground_truth_path)?;
 
     let all_ids = [];
@@ -256,10 +255,9 @@ pub async fn prepare_ground_truth_ids(db) {
             all_ids.push(ids);
         }
     }
+    println!("Loaded {} ground truth lines", all_ids.len());
 
     db.data.ground_truth_ids = all_ids;
-
-    println!("Loaded {} ground truth lines", all_ids.len());
 
     Ok(())
 }
