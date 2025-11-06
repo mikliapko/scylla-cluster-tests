@@ -285,6 +285,8 @@ class LatteStressThread(DockerBasedStressThread):
             LOGGER.info("Failed to collect latte version information", exc_info=True)
 
         LOGGER.debug("running: %s", stress_cmd)
+        import time
+        time.sleep(3600)
         result, keyspace_holder = {}, LatteKeyspaceHolder()
         with cleanup_context, \
                 hdrh_logger_context, \
