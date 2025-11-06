@@ -13,6 +13,9 @@ data_validation: |
 #                     "scylla-bench -workload=uniform -mode=read -replication-factor=3 -partition-count=10 -clustering-row-count=100 -clustering-row-size=5120 -rows-per-request=10 -concurrency=7 -max-rate=32000 -duration=1m"
 #                    ]
 
+prepare_write_cmd: "latte run --function insert --duration 50000 data_dir/latte/vector_search.rn"
+stress_cmd: "latte run -f validate_average_recall --duration 120s data_dir/latte/vector_search.rn"
+
 n_loaders: 1
 instance_type_db: 'i4i.large'
 # testing the force iotune feature
