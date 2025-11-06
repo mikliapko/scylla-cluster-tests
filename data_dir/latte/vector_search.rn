@@ -4,11 +4,11 @@ use latte::*;
 const KEYSPACE = latte::param!("keyspace", "vdb_bench");
 const TABLE = latte::param!("table", "vdb_bench_collection");
 const INDEX = latte::param!("index", "vdb_bench_collection_vector_idx");
-const REPLICATION_FACTOR = latte::param!("replication_factor", 1);
+const REPLICATION_FACTOR = latte::param!("replication_factor", 3);
 const TABLETS_ENABLED = latte::param!("tablets_enabled", false);
 const ANN_LIMIT = latte::param!("ann_limit", 10);
 const MIN_RECALL_THRESHOLD = latte::param!("min_recall_threshold", 0.9);
-const VECTOR_DATA_DIR = latte::param!("vector_data_dir", "/data_dir/vector_search/");
+const VECTOR_DATA_DIR = latte::param!("vector_data_dir", "/data_dir/latte/");
 
 const P_STMT = #{
     "INSERT": #{

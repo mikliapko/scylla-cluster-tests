@@ -12,12 +12,12 @@ TEST_DATA_FILENAME = "test_data.txt"
 class VectorSearchSanity(ClusterTester, loader_utils.LoaderUtilsMixin):
     @staticmethod
     def download_vector_search_test_data_from_s3():
-        s3_storage = S3Storage(bucket=BUCKET_NAME)
-
         base_url = f"https://{BUCKET_NAME}.s3.amazonaws.com"
-        s3_storage.download_file(link=f"{base_url}/{TEST_DATA_FILENAME}", dst_dir=LATTE_DIR_PATH)
-        s3_storage.download_file(link=f"{base_url}/{GROUND_TRUTH_FILENAME}", dst_dir=LATTE_DIR_PATH)
+
+        s3_storage = S3Storage(bucket=BUCKET_NAME)
         s3_storage.download_file(link=f"{base_url}/{DATASET_FILENAME}", dst_dir=LATTE_DIR_PATH)
+        s3_storage.download_file(link=f"{base_url}/{GROUND_TRUTH_FILENAME}", dst_dir=LATTE_DIR_PATH)
+        s3_storage.download_file(link=f"{base_url}/{TEST_DATA_FILENAME}", dst_dir=LATTE_DIR_PATH)
 
     def test_vector_search_sanity(self):
         self.log.info("Prepare Vector Search data")
