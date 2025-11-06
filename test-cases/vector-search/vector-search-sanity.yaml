@@ -4,6 +4,7 @@ prepare_write_cmd: "latte run --function insert --duration 50000 data_dir/latte/
 stress_cmd: "latte run --function validate_average_recall --duration 120s data_dir/latte/vector_search.rn"
 
 n_db_nodes: 3
+instance_type_loader: 'c6i.2xlarge'
 instance_type_db: 'i4i.large'
 n_loaders: 1
 n_vector_store_nodes: 1
