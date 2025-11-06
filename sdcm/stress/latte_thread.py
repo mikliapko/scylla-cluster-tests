@@ -284,9 +284,7 @@ class LatteStressThread(DockerBasedStressThread):
         except Exception:  # noqa: BLE001
             LOGGER.info("Failed to collect latte version information", exc_info=True)
 
-        LOGGER.info("running: %s", stress_cmd)
-        import time
-        time.sleep(3600)
+        LOGGER.debug("running: %s", stress_cmd)
         result, keyspace_holder = {}, LatteKeyspaceHolder()
         with cleanup_context, \
                 hdrh_logger_context, \

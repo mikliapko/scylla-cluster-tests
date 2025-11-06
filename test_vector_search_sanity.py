@@ -1,5 +1,3 @@
-import time
-
 from sdcm.tester import ClusterTester
 from sdcm.utils import loader_utils
 from sdcm.utils.common import S3Storage
@@ -27,9 +25,6 @@ class VectorSearchSanity(ClusterTester, loader_utils.LoaderUtilsMixin):
 
         self.log.info("Populate cluster with data")
         self.run_prepare_write_cmd()
-
-        self.log.info("Wait for index to build")
-        time.sleep(3600)
 
         self.log.info("Run ANN OF queries and validate recall")
         stress_queue = []
