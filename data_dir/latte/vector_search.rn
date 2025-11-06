@@ -8,7 +8,7 @@ const REPLICATION_FACTOR = latte::param!("replication_factor", 1);
 const TABLETS_ENABLED = latte::param!("tablets_enabled", false);
 const ANN_LIMIT = latte::param!("ann_limit", 10);
 const MIN_RECALL_THRESHOLD = latte::param!("min_recall_threshold", 0.9);
-const VECTOR_DATA_DIR = latte::param!("vector_data_dir", "data_dir/vector_search/");
+const VECTOR_DATA_DIR = latte::param!("vector_data_dir", "/data_dir/vector_search/");
 
 const P_STMT = #{
     "INSERT": #{
@@ -225,7 +225,7 @@ fn parse_dataset_line_into_id_and_vector_string(line) {
 }
 
 pub async fn prepare_dataset(db) {
-    let dataset_path = "dataset.txt";
+    let dataset_path = VECTOR_DATA_DIR + "dataset.txt";
     let lines = read_and_filter_lines(dataset_path)?;
     println!("Loaded {} dataset lines", lines.len());
 
@@ -235,7 +235,7 @@ pub async fn prepare_dataset(db) {
 }
 
 pub async fn prepare_test_vectors(db) {
-    let test_data_path = "test_data.txt";
+    let test_data_path = VECTOR_DATA_DIR + "test_data.txt";
     let lines = read_and_filter_lines(test_data_path)?;
     println!("Loaded {} test vector lines", lines.len());
 
@@ -245,7 +245,7 @@ pub async fn prepare_test_vectors(db) {
 }
 
 pub async fn prepare_ground_truth_ids(db) {
-    let ground_truth_path = "ground_truth.txt";
+    let ground_truth_path = VECTOR_DATA_DIR + "ground_truth.txt";
     let lines = read_and_filter_lines(ground_truth_path)?;
 
     let all_ids = [];
