@@ -1,7 +1,7 @@
 test_duration: 60
 
 prepare_write_cmd: "latte run --function insert --duration 50000 data_dir/latte/vector_search.rn"
-stress_cmd: "latte run -f validate_average_recall --duration 120s data_dir/latte/vector_search.rn"
+stress_cmd: "latte run --function validate_average_recall --duration 120s data_dir/latte/vector_search.rn"
 
 n_db_nodes: 3
 instance_type_db: 'i4i.large'
