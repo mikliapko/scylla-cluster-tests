@@ -30,6 +30,8 @@ class VectorSearchSanity(VectorSearchBase):
         command = f"latte schema {LATTE_DIR_PATH}/vector_search.rn"
         self.run_stress_thread(command)
 
+        time.sleep(3600)
+
         self.log.info("Populate cluster with data")
         command = f"latte run {LATTE_DIR_PATH}/vector_search.rn -f insert -d 50000"
         self.run_stress_thread(command)
