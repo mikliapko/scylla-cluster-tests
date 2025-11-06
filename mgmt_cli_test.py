@@ -119,7 +119,10 @@ class ManagerBackupTests(ManagerRestoreTests):
         backup_task_status = backup_task.wait_and_get_final_status(timeout=1500)
         assert backup_task_status == TaskStatus.DONE, \
             f"Backup task ended in {backup_task_status} instead of {TaskStatus.DONE}"
-        self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, ks_names=ks_names)
+        # Do restore with a task for multiDC clusters, otherwise the test will take a long time
+        restore_with_task = True if len(self.params.region_names) > 1 else False
+        self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task, ks_names=ks_names,
+                                   restore_data_with_task=restore_with_task)
         self.run_verification_read_stress(ks_names)
         mgr_cluster.delete()  # remove cluster at the end of the test
         self.log.info('finishing test_basic_backup')
