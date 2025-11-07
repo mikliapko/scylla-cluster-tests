@@ -30,7 +30,7 @@ from sdcm.reporting.tooling_reporter import LatteVersionReporter
 from sdcm.sct_events.loaders import LatteStressEvent
 from sdcm.sct_events import Severity
 from sdcm.stress.base import DockerBasedStressThread
-from sdcm.utils.common import get_sct_root_path
+from sdcm.utils.common import get_sct_root_path, S3Storage
 from sdcm.utils.docker_remote import RemoteDocker
 from sdcm.utils.remote_logger import HDRHistogramFileLogger
 
@@ -91,10 +91,21 @@ def get_latte_operation_type(stress_cmd):
         return "mixed"
 
 
+def download_vector_search_test_data_from_s3(dst_dir):
+    bucket_name = "vector-store-in-cloud"
+    base_url = f"https://{bucket_name}.s3.amazonaws.com"
+
+    s3_storage = S3Storage(bucket=bucket_name)
+    s3_storage.download_file(link=f"{base_url}/dataset.txt", dst_dir=dst_dir)
+    s3_storage.download_file(link=f"{base_url}/ground_truth.txt", dst_dir=dst_dir)
+    s3_storage.download_file(link=f"{base_url}/test_data.txt", dst_dir=dst_dir)
+
+
 class LatteStressThread(DockerBasedStressThread):
 
     DOCKER_IMAGE_PARAM_NAME = "stress_image.latte"
     SCHEMA_CMD_CALL_COUNTER = {}
+    VECTOR_SEARCH_SCRIPTS = ("data_dir/latte/vector_search.rn",)
 
     def set_stress_operation(self, stress_cmd):
         return get_latte_operation_type(self.stress_cmd)
@@ -105,6 +116,9 @@ class LatteStressThread(DockerBasedStressThread):
         script_name = script_name_regx.search(self.stress_cmd).group(0)
         if script_name not in self.SCHEMA_CMD_CALL_COUNTER:
             self.SCHEMA_CMD_CALL_COUNTER[script_name] = 0
+
+        if script_name in self.VECTOR_SEARCH_SCRIPTS:
+            download_vector_search_test_data_from_s3(dst_dir=Path(script_name).parent)
 
         for src_file in (Path(get_sct_root_path()) / script_name).parent.iterdir():
             cmd_runner.send_files(str(src_file), str(Path(script_name).parent / src_file.name))
