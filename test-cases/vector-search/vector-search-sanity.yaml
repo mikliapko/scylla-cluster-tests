@@ -1,7 +1,7 @@
 test_duration: 60
 
 prepare_write_cmd: "latte run --function insert --duration 50000 data_dir/latte/vector_search.rn"
-stress_cmd: "latte run --function validate_average_recall --duration 120s data_dir/latte/vector_search.rn"
+stress_cmd: "latte run --function validate_average_recall --duration 300s data_dir/latte/vector_search.rn"
 
 n_db_nodes: 3
 instance_type_loader: 'c6i.2xlarge'
@@ -10,6 +10,6 @@ n_loaders: 1
 n_vector_store_nodes: 1
 instance_type_vector_store: 't4g.small'
 
-user_prefix: 'vs-in-cloud-sanity'
+user_prefix: 'vector-search-sanity'
 
 use_preinstalled_scylla: true
