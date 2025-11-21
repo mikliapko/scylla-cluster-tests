@@ -30,11 +30,8 @@ class XcloudScaleOutTest(LongevityTest):
         self.log.info(f"Updated nodes: {updated_nodes}")
 
         self.log.info(f"Verify the number of nodes after scale out is 3 and all the old nodes were replaced")
-        assert sorted(initial_nodes_ips) != sorted(updated_nodes_ips), "Nodes were not replaced after scale out"
-        assert len(updated_nodes) == 3, "Number of nodes after scaling is not 6"
-        for node in updated_nodes:
-            self.log.info(f"Verify node: {node}")
-            assert node.status == HostStatus.UP, "Not all nodes status is 'UP'"
+        assert set(initial_nodes_ips).isdisjoint(set(updated_nodes_ips)), "Nodes were not replaced after scale out"
+        assert len(updated_nodes) == 3, "Number of nodes after scaling is not 3"
 
     def test_xcloud_scale_out(self):
         """

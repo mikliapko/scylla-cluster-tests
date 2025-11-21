@@ -6,7 +6,7 @@ n_loaders: 1
 
 n_monitor_nodes: 1
 
-user_prefix: 'xcloud-scale-out-test-gce'
+user_prefix: 'xcloud-scale-out-gce-80-75'
 scylla_version: '2025.3.2'
 
 scaling_config: {
