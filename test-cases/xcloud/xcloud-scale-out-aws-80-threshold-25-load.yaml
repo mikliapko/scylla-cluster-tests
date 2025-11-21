@@ -1,4 +1,4 @@
-test_duration: 180
+test_duration: 300
 stress_cmd: ["cassandra-stress write n=42500000 cl=QUORUM -schema 'replication(strategy=NetworkTopologyStrategy,replication_factor=3)' -mode cql3 native -rate 'threads=30 throttle=5000/s' -col 'n=FIXED(10) size=FIXED(250)' -pop seq=1..42500000 -log interval=5"]
 
 xcloud_replication_factor: 3
