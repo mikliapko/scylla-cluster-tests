@@ -7,6 +7,7 @@ n_loaders: 1
 n_monitor_nodes: 1
 
 user_prefix: 'xcloud-scale-out-aws-80-25'
+instance_provision: 'on_demand'
 scylla_version: '2025.3.2'
 
 scaling_config: {
