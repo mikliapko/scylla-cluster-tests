@@ -95,6 +95,7 @@ class LatteStressThread(DockerBasedStressThread):
 
     DOCKER_IMAGE_PARAM_NAME = "stress_image.latte"
     SCHEMA_CMD_CALL_COUNTER = {}
+    IS_LATTE_FILES_COPIED = False
 
     def set_stress_operation(self, stress_cmd):
         return get_latte_operation_type(self.stress_cmd)
@@ -106,8 +107,12 @@ class LatteStressThread(DockerBasedStressThread):
         if script_name not in self.SCHEMA_CMD_CALL_COUNTER:
             self.SCHEMA_CMD_CALL_COUNTER[script_name] = 0
 
-        for src_file in (Path(get_sct_root_path()) / script_name).parent.iterdir():
-            cmd_runner.send_files(str(src_file), str(Path(script_name).parent / src_file.name))
+        if not LatteStressThread.IS_LATTE_FILES_COPIED:
+            for src_file in (Path(get_sct_root_path()) / script_name).parent.iterdir():
+                if src_file.is_file():  # exclude non-file items from being copied
+                    cmd_runner.send_files(str(src_file), str(Path(script_name).parent / src_file.name))
+
+            LatteStressThread.IS_LATTE_FILES_COPIED = True
 
         ssl_config = ''
         if self.params['client_encrypt']:
