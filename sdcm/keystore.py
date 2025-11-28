@@ -71,7 +71,11 @@ class KeyStore:
 
     def get_gcp_service_accounts(self):
         project = os.environ.get('SCT_GCE_PROJECT') or 'gcp-sct-project-1'
-        return self.get_json(f"{project}_service_accounts.json")
+        service_accounts = self.get_json(f"{project}_service_accounts.json")
+        for sa in service_accounts:
+            if 'https://www.googleapis.com/auth/cloud-platform' not in sa['scopes']:
+                sa['scopes'].append('https://www.googleapis.com/auth/cloud-platform')
+        return service_accounts
 
     def get_scylladb_upload_credentials(self):
         return self.get_json("scylladb_upload.json")
@@ -120,6 +124,9 @@ class KeyStore:
     def get_azure_kms_config(self):
         return self.get_json("azure_kms_config.json")
 
+    def get_gcp_kms_config(self):
+        return self.get_json("gcp_kms_config.json")
+
     def get_argusdb_credentials(self):
         return self.get_json("argusdb_config_v2.json")
 
@@ -131,6 +138,9 @@ class KeyStore:
 
     def get_cloud_rest_credentials(self, environment: str = "lab"):
         return self.get_json(f"scylla_cloud_sct_api_creds_{environment}.json")
+
+    def get_jira_credentials(self):
+        return self.get_json("scylladb_jira.json")
 
     @staticmethod
     def calculate_s3_etag(file: BinaryIO, chunk_size=8 * 1024 * 1024):

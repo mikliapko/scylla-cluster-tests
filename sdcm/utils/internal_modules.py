@@ -1,11 +1,14 @@
 import sys
 from pathlib import Path
 
-# Add scylla-qa-internal to the Python path using pathlib
+scylla_qa_internal_path = Path(__file__).resolve().parents[2] / 'scylla-qa-internal'
+
+# if scylla-qa-internal already exists, add it to the Python path
 # TODO: make this support multiple paths if needed
-scylla_qa_internal_path = str((Path(__file__).parent.parent.parent / 'scylla-qa-internal').resolve())
-if scylla_qa_internal_path not in sys.path:
-    sys.path.insert(0, scylla_qa_internal_path)
+if scylla_qa_internal_path.exists():
+    scylla_qa_internal_path_str = str(scylla_qa_internal_path)
+    if scylla_qa_internal_path_str not in sys.path:
+        sys.path.insert(0, scylla_qa_internal_path_str)
 
 # Import the internal modules
 try:
@@ -33,6 +36,9 @@ except ImportError:
             raise NotImplementedError(not_supported_message)
 
         def xcloud_connect_get_ssh_address(self, node):
+            raise NotImplementedError(not_supported_message)
+
+        def xcloud_connect_get_manager_ssh_address(self, cluster_id, sdm_environment):
             raise NotImplementedError(not_supported_message)
 
 __all__ = ["XCloudConnectivityContainerMixin"]

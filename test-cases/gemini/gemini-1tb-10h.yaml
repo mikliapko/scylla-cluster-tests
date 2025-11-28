@@ -8,7 +8,7 @@ instance_type_loader: 'm6i.xlarge'
 user_prefix: 'gemini-1tb-10h'
 
 nemesis_class_name: 'SisyphusMonkey'
-nemesis_selector: 'run_with_gemini'
+nemesis_selector: 'run_with_gemini and not enospc'
 nemesis_seed: '041'
 
 gemini_cmd: |
@@ -23,7 +23,3 @@ gemini_log_cql_statements: true
 
 db_type: mixed_scylla
 instance_type_db_oracle: 'i4i.16xlarge'
-
-# enable vector.dev logging for all tier1
-# TODO: remove this when vector.dev logging is enabled by default
-logs_transport: 'vector'

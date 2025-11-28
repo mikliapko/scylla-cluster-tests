@@ -94,6 +94,7 @@ class SctEvent:
 
     _ready_to_publish: bool = False  # set it to True in __init__() and to False in publish() to prevent double-publish
     publish_to_grafana: bool = True
+    publish_to_argus: bool = True
     save_to_files: bool = True
 
     def __init_subclass__(cls, abstract: bool = False):
@@ -210,7 +211,7 @@ class SctEvent:
         return fmt
 
     def add_subcontext(self):
-        from sdcm.sct_events.continuous_event import ContinuousEventsRegistry
+        from sdcm.sct_events.continuous_event import ContinuousEventsRegistry  # noqa: PLC0415
         # Add subcontext for event with ERROR and CRITICAL severity only
         if self.severity.value < 3:
             return
@@ -238,7 +239,7 @@ class SctEvent:
                     self.subcontext.append(nemesis)
 
     def publish(self, warn_not_ready: bool = True) -> None:
-        from sdcm.sct_events.events_device import get_events_main_device
+        from sdcm.sct_events.events_device import get_events_main_device  # noqa: PLC0415
 
         if not self._ready_to_publish:
             if warn_not_ready:
@@ -248,7 +249,7 @@ class SctEvent:
         self._ready_to_publish = False
 
     def publish_or_dump(self, default_logger: Optional[logging.Logger] = None, warn_not_ready: bool = True) -> None:
-        from sdcm.sct_events.events_device import get_events_main_device
+        from sdcm.sct_events.events_device import get_events_main_device  # noqa: PLC0415
 
         if not self._ready_to_publish:
             if warn_not_ready:
@@ -263,7 +264,7 @@ class SctEvent:
             if proc.is_alive():
                 self.publish()
             else:
-                from sdcm.sct_events.file_logger import get_events_logger
+                from sdcm.sct_events.file_logger import get_events_logger  # noqa: PLC0415
                 get_events_logger(_registry=self._events_processes_registry).write_event(self)
         elif default_logger:
             default_logger.error(str(self))
@@ -306,6 +307,8 @@ class SctEvent:
 
     def __str__(self):
         return self.formatter(self.msgfmt, self)
+
+    __hash__ = False
 
     def __eq__(self, other):
         return (isinstance(other, type(self)) or isinstance(self, type(other))) \
@@ -373,6 +376,8 @@ class BaseFilter(SystemEvent, abstract=True):
     def __init__(self, severity: Severity = Severity.NORMAL):
         super().__init__(severity=severity)
         self.uuid = str(uuid.uuid4())
+
+    __hash__ = False
 
     def __eq__(self, other):
         if not isinstance(self, type(other)):

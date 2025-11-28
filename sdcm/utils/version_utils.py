@@ -203,6 +203,9 @@ class ComparableScyllaVersion:
         #       So, make empty 'pre-release' prevail over any defined one.
         return (self.v_major, self.v_minor, self.v_patch, self.v_pre_release or 'xyz')
 
+    def __hash__(self):
+        return hash(self.as_comparable())
+
     def __lt__(self, other):
         return self.as_comparable() < self._transform_to_comparable(other).as_comparable()
 
@@ -584,7 +587,16 @@ def resolve_latest_repo_symlink(url: str) -> str:
     return resolved_url
 
 
-def get_specific_tag_of_docker_image(docker_repo: str):
+def get_specific_tag_of_docker_image(docker_repo: str, architecture: Literal['x86_64', 'aarch64'] = 'x86_64') -> str:
+    """
+    Get the latest docker image tag from ScyllaDB S3 storage for given nightly docker repo.
+
+    :param docker_repo: docker repository name, e.g. 'scylladb/scylla-nightly'
+    :param architecture: architecture of the docker image, either 'x86_64' or 'aarch64' (default: 'x86_64')
+    :return: docker image tag string if found
+    :raises ValueError: if docker repo is not supported or tag info cannot be found
+    """
+
     if docker_repo == 'scylladb/scylla-nightly':
         product = 'scylla'
         branch = 'master'
@@ -602,9 +614,11 @@ def get_specific_tag_of_docker_image(docker_repo: str):
     #    url-id: 2022-08-29T08:05:34Z
     #    docker-image-name: scylla-nightly:5.2.0-dev-0.20220829.67c91e8bcd61
     build_info = yaml.safe_load(res.content)
-    tag = build_info['docker-image-name'].split(':', maxsplit=1)[1]
-    LOGGER.debug('found %s for %s repo', tag, docker_repo)
-    return tag
+    if tag := build_info.get(f'docker-image-name-{architecture}', build_info.get('docker-image-name')):
+        tag = tag.split(':', maxsplit=1)[1]
+        LOGGER.debug('found %s for %s repo', tag, docker_repo)
+        return tag
+    raise ValueError(f"Cannot find docker image tag info in {build_url} for architecture={architecture}")
 
 
 def transform_non_semver_scylla_version_to_semver(scylla_version: str):
@@ -759,7 +773,7 @@ def get_s3_scylla_repos_mapping(dist_type='centos', dist_version=None):
     s3_client: S3Client = boto3.client('s3', region_name=DEFAULT_AWS_REGION)
     bucket = 'downloads.scylladb.com'
 
-    if dist_type == 'centos':
+    if dist_type in ('centos', 'rocky', 'rhel'):
         response = s3_client.list_objects(Bucket=bucket, Prefix='rpm/centos/', Delimiter='/')
 
         for repo_file in response['Contents']:
@@ -799,7 +813,7 @@ def find_scylla_repo(scylla_version, dist_type='centos', dist_version=None):
     Get a repo/list of scylla, based on scylla version match
 
     :param scylla_version: branch version to look for, ex. 'branch-2019.1:latest', 'branch-3.1:l'
-    :param dist_type: one of ['centos', 'ubuntu', 'debian']
+    :param dist_type: one of ['centos', 'ubuntu', 'debian', 'rocky', 'rhel']
     :param dist_version: family name of the distro version
     :raises: ValueError if not found
 
@@ -820,13 +834,13 @@ def find_scylla_repo(scylla_version, dist_type='centos', dist_version=None):
 
 
 def get_branched_repo(scylla_version: str,
-                      dist_type: Literal["centos", "ubuntu", "debian"] = "centos",
+                      dist_type: Literal["centos", "ubuntu", "debian", "rocky"] = "centos",
                       bucket: str = "downloads.scylladb.com") -> Optional[str]:
     """
     Get a repo/list of scylla, based on scylla version match
 
     :param scylla_version: branch version to look for, ex. 'branch-2019.1:latest', 'branch-3.1:l'
-    :param dist_type: one of ['centos', 'ubuntu', 'debian']
+    :param dist_type: one of ['centos', 'ubuntu', 'debian', 'rocky', 'rhel']
     :param bucket: which bucket to download from
     :return: str url repo/list, or None if not found
     """
@@ -845,7 +859,7 @@ def get_branched_repo(scylla_version: str,
     else:
         product = "scylla"
 
-    if dist_type == "centos":
+    if dist_type in ("centos", "rocky", "rhel"):
         prefix = f"unstable/{product}/{branch}/rpm/centos/{branch_version}/"
         filename = "scylla.repo"
     elif dist_type in ("ubuntu", "debian",):

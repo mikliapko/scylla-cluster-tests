@@ -343,7 +343,7 @@ Url to the repo of scylla manager agent version to install for management tests
 
 Branch of scylla manager server and agent to install. Options in defaults/manager_versions.yaml
 
-**default:** 3.6
+**default:** 3.7
 
 **type:** str
 
@@ -370,7 +370,7 @@ Branch of scylla db enterprise to install. Options in defaults/manager_versions.
 
 
 
-**default:** 3.6.0
+**default:** 3.7.0
 
 **type:** str
 
@@ -645,6 +645,24 @@ If True, all backtraces found in db nodes would be decoded automatically
 **type:** boolean
 
 
+## **backtrace_stall_decoding** / SCT_BACKTRACE_STALL_DECODING
+
+If True, reactor stall backtraces will be decoded. If False, reactor stalls are skipped during<br>backtrace decoding to reduce overhead in performance tests. Only applies when backtrace_decoding is True.
+
+**default:** True
+
+**type:** boolean
+
+
+## **backtrace_decoding_disable_regex** / SCT_BACKTRACE_DECODING_DISABLE_REGEX
+
+Regex pattern to match event types that should not be decoded. For example,<br>'^(REACTOR_STALLED|KERNEL_CALLSTACK)$' would skip decoding for those event types.<br>Only applies when backtrace_decoding is True.
+
+**default:** N/A
+
+**type:** str (appendable)
+
+
 ## **print_kernel_callstack** / SCT_PRINT_KERNEL_CALLSTACK
 
 Scylla will print kernel callstack to logs if True, otherwise, it will try and may print a message<br>that it failed to.
@@ -906,6 +924,15 @@ If true, spawn a docker with a dns server for the ycsb loader to point to
 **type:** boolean
 
 
+## **alternator_test_table** / SCT_ALTERNATOR_TEST_TABLE
+
+Dictionary of a test alternator table features:<br>name: str - the name of the table<br>lsi_name: str - the name of the local secondary index to create with a table<br>gsi_name: str - the name of the global secondary index to create with a table<br>tags: dict - the tags to apply to the created table<br>items: int - expected number of items in the table after prepare
+
+**default:** N/A
+
+**type:** dict
+
+
 ## **alternator_enforce_authorization** / SCT_ALTERNATOR_ENFORCE_AUTHORIZATION
 
 If true, enable the authorization check in dynamodb api (alternator)
@@ -964,7 +991,7 @@ More arguments to append to oracle command line
 
 More configuration to append to /etc/scylla/scylla.yaml
 
-**default:** N/A
+**default:** {'rf_rack_valid_keyspaces': True}
 
 **type:** dict_or_str
 
@@ -1122,6 +1149,15 @@ table options for created table. example:<br>["cdc={'enabled': true}"]<br>["cdc=
 **type:** list
 
 
+## **run_gemini_in_rolling_upgrade** / SCT_RUN_GEMINI_IN_ROLLING_UPGRADE
+
+Enable running Gemini workload during rolling upgrade test. Default is false.
+
+**default:** N/A
+
+**type:** boolean
+
+
 ## **instance_type_loader** / SCT_INSTANCE_TYPE_LOADER
 
 AWS image type of the loader node
@@ -1259,7 +1295,7 @@ AMI ID for Vector Store nodes
 
 ## **instance_type_vector_store** / SCT_INSTANCE_TYPE_VECTOR_STORE
 
-EC2 instance type for Vector Store nodes
+AWS/GCP cloud provider instance type for Vector Store nodes
 
 **default:** N/A
 
@@ -2013,15 +2049,6 @@ Defines whether we enable the alternator feature using scylla-operator or not.
 **type:** boolean
 
 
-## **k8s_connection_bundle_file** / SCT_K8S_CONNECTION_BUNDLE_FILE
-
-Serverless configuration bundle file
-
-**default:** N/A
-
-**type:** _file
-
-
 ## **k8s_db_node_service_type** / SCT_K8S_DB_NODE_SERVICE_TYPE
 
 Defines the type of the K8S 'Service' objects type used for ScyllaDB pods. Empty value means 'do not set and allow scylla-operator to choose'.
@@ -2080,7 +2107,7 @@ Number of nodes in monitoring pool that will be used for scylla-operator's deplo
 
 Scylla manager docker image, i.e. 'scylladb/scylla-manager:2.2.1'
 
-**default:** scylladb/scylla-manager:3.6.0
+**default:** scylladb/scylla-manager:3.7.0
 
 **type:** str (appendable)
 
@@ -2915,7 +2942,7 @@ The time interval in minutes which gets waited before the KMS key rotation happe
 
 ## **enable_kms_key_rotation** / SCT_ENABLE_KMS_KEY_ROTATION
 
-Allows to disable KMS keys rotation. Applicable only to Azure backend. In case of AWS backend its KMS keys will always be rotated as of now.
+Allows to disable KMS keys rotation. Applicable to GCP and Azure backends. In case of AWS backend its KMS keys will always be rotated as of now.
 
 **default:** N/A
 
@@ -2935,7 +2962,7 @@ An escape hatch to disable KMS for enterprise run, when needed, we enable kms by
 
 How to transport logs: syslog-ng, ssh or docker
 
-**default:** syslog-ng
+**default:** vector
 
 **type:** str (appendable)
 
@@ -3134,6 +3161,15 @@ Number of nodes to upgrade and rollback in test_generic_cluster_upgrade
 Whether to upgrade sstables as part of upgrade_node or not
 
 **default:** N/A
+
+**type:** boolean
+
+
+## **enable_truncate_checks_on_node_upgrade** / SCT_ENABLE_TRUNCATE_CHECKS_ON_NODE_UPGRADE
+
+Enables or disables truncate checks on each node upgrade and rollback
+
+**default:** True
 
 **type:** boolean
 
@@ -3725,7 +3761,7 @@ Cloud provider for Scylla Cloud deployment (aws, gce)
 
 ## **xcloud_replication_factor** / SCT_XCLOUD_REPLICATION_FACTOR
 
-Replication factor for Scylla Cloud cluster (default: 3)
+Replication factor for Scylla Cloud cluster
 
 **default:** N/A
 
@@ -3775,6 +3811,15 @@ Vector Store indexing threads (if not set, defaults to number of CPU cores on VS
 **default:** N/A
 
 **type:** int
+
+
+## **download_from_s3** / SCT_DOWNLOAD_FROM_S3
+
+Destination-source map of dirs/buckets to download from S3 before starting the test
+
+**default:** N/A
+
+**type:** list
 
 
 ## **scaling_config** / SCT_XCLOUD_SCALING_CONFIG

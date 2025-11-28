@@ -226,6 +226,7 @@ class NemesisFlags:
     delete_rows: bool = False  # A flag denotes a nemesis deletes partitions/rows, generating tombstones.
     zero_node_changes: bool = False
     sla: bool = False               # flag that signal that nemesis is used for SLA tests
+    enospc: bool = False             # flag that signal that nemesis causes a node to go out of space
 
 
 class Nemesis(NemesisFlags):
@@ -3770,6 +3771,10 @@ class Nemesis(NemesisFlags):
             node_to_remove.stop_scylla_server(verify_up=False, verify_down=True)
             self._terminate_cluster_node(node_to_remove)
 
+        wait_for(node_operations.is_node_seen_as_down, step=5, timeout=600, throw_exc=True,
+                 down_node=node_to_remove, verification_node=verification_node,
+                 text=f"Wait other nodes see {node_to_remove.name} as DOWN...")
+
         @retrying(n=3, sleep_time=5, message="Removing node from cluster...")
         def remove_node():
             removenode_reject_msg = r"Rejected removenode operation.*the node being removed is alive"
@@ -3783,13 +3788,6 @@ class Nemesis(NemesisFlags):
                     raise Exception(f"Removenode was rejected {res.stdout}\n{res.stderr}")
 
             return res.exit_status
-
-        # full cluster repair
-        up_normal_nodes = self.cluster.get_nodes_up_and_normal(verification_node)
-        # Repairing will result in a best effort repair due to the terminated node,
-        # and as a result requires ignoring repair errors
-        with DbEventsFilter(db_event=DatabaseLogEvent.RUNTIME_ERROR, line="failed to repair"):
-            self.run_repair_on_nodes(nodes=up_normal_nodes, ignore_down_hosts=True)
 
         with self.action_log_scope(f"Remove {node_to_remove.name} node"):
             exit_status = remove_node()
@@ -3821,6 +3819,13 @@ class Nemesis(NemesisFlags):
             ip_address=node_to_remove.ip_address, verification_node=verification_node)
         assert removed_node_status is None, \
             "Node was not removed properly (Node status:{})".format(removed_node_status)
+
+        # full cluster repair
+        up_normal_nodes = self.cluster.get_nodes_up_and_normal(verification_node)
+        # Repairing will result in a best effort repair due to the terminated node,
+        # and as a result requires ignoring repair errors
+        with DbEventsFilter(db_event=DatabaseLogEvent.RUNTIME_ERROR, line="failed to repair"):
+            self.run_repair_on_nodes(nodes=up_normal_nodes, ignore_down_hosts=True)
 
         # add new node with same type (data node / zero token node)
         new_node_args = {"count": 1, "rack": self.target_node.rack}
@@ -4857,10 +4862,10 @@ class Nemesis(NemesisFlags):
         self.monitoring_set.reconfigure_scylla_monitoring()
         return new_node
 
-    def _write_read_data_to_multi_dc_keyspace(self, datacenters: List[str]) -> None:
+    def _write_read_data_to_multi_dc_keyspace(self, dc_rf3: str, dc_rf1: str) -> None:
         InfoEvent(message='Writing and reading data with new dc').publish()
         write_cmd = f"cassandra-stress write no-warmup cl=ALL n=100000 -schema 'keyspace=keyspace_new_dc " \
-            f"replication(strategy=NetworkTopologyStrategy,{datacenters[0]}=3,{datacenters[1]}=1) " \
+            f"replication(strategy=NetworkTopologyStrategy,{dc_rf3}=3,{dc_rf1}=1) " \
             f"compression=LZ4Compressor compaction(strategy=SizeTieredCompactionStrategy)' " \
             f"-mode cql3 native compression=lz4 -rate threads=5 -pop seq=1..100000 -log interval=5"
         write_thread = self.tester.run_stress_thread(stress_cmd=write_cmd, round_robin=True, stop_test_on_failure=False)
@@ -4913,8 +4918,9 @@ class Nemesis(NemesisFlags):
             system_keyspaces.insert(0, "system_auth")
         self._switch_to_network_replication_strategy(self.cluster.get_test_keyspaces() + system_keyspaces)
         datacenters = list(self.tester.db_cluster.get_nodetool_status().keys())
+        initial_dc_name = datacenters[0]
         self.tester.create_keyspace("keyspace_new_dc", replication_factor={
-                                    datacenters[0]: min(3, len(self.cluster.data_nodes))})
+                                    initial_dc_name: min(3, len(self.cluster.data_nodes))})
         node_added = False
         with ExitStack() as context_manager:
             def finalizer(exc_type, *_):
@@ -4945,7 +4951,7 @@ class Nemesis(NemesisFlags):
                     preserved_strategy.replication_factors_per_dc[new_dc_name] = 0
 
                 InfoEvent(message='execute rebuild on new datacenter').publish()
-                cmd = f"rebuild -- {datacenters[0]}"
+                cmd = f"rebuild -- {initial_dc_name}"
                 with wait_for_log_lines(node=new_node,
                                         start_line_patterns=["rebuild.*started with keyspaces=", "Rebuild starts"],
                                         end_line_patterns=["rebuild.*finished with keyspaces=", "Rebuild succeeded"],
@@ -4957,9 +4963,8 @@ class Nemesis(NemesisFlags):
                 for cluster_node in self.cluster.data_nodes:
                     with self.action_log_scope(f"Run repair on {cluster_node.name} node with cmd: {cmd}"):
                         cluster_node.run_nodetool(sub_cmd=cmd, publish_event=True)
-                datacenters = list(self.tester.db_cluster.get_nodetool_status().keys())
                 with self.action_log_scope("Run write and then read data to multiDC keyspace"):
-                    self._write_read_data_to_multi_dc_keyspace(datacenters)
+                    self._write_read_data_to_multi_dc_keyspace(dc_rf3=initial_dc_name, dc_rf1=new_dc_name)
 
             with self.action_log_scope(f"Decommission of the new node {new_node.name}"):
                 self.cluster.decommission(new_node)
@@ -5179,7 +5184,7 @@ class Nemesis(NemesisFlags):
 
         # Disable MV tests with tablets.
         if is_tablets_feature_enabled(self.target_node):
-            if ComparableScyllaVersion(self.target_node.scylla_version) <= ComparableScyllaVersion("2025.3"):
+            if ComparableScyllaVersion(self.target_node.scylla_version) <= ComparableScyllaVersion("2025.3.99"):
                 raise UnsupportedNemesis("MV/SI for tablets are not supported for Scylla 2025.3 and older versions")
 
         with self.cluster.cql_connection_patient(self.target_node, connect_timeout=300) as session:
@@ -5225,7 +5230,7 @@ class Nemesis(NemesisFlags):
 
         # Disable MV tests with tablets.
         if is_tablets_feature_enabled(self.target_node):
-            if ComparableScyllaVersion(self.target_node.scylla_version) <= ComparableScyllaVersion("2025.3"):
+            if ComparableScyllaVersion(self.target_node.scylla_version) <= ComparableScyllaVersion("2025.3.99"):
                 raise UnsupportedNemesis("MV for tablets are not supported for Scylla 2025.3 and older versions")
 
         free_nodes = [node for node in self.cluster.data_nodes if not node.running_nemesis]
@@ -6195,6 +6200,7 @@ class EnospcMonkey(Nemesis):
     disruptive = True
     kubernetes = True
     limited = True
+    enospc = True
 
     def disrupt(self):
         self.disrupt_nodetool_enospc()
@@ -6203,6 +6209,7 @@ class EnospcMonkey(Nemesis):
 class EnospcAllNodesMonkey(Nemesis):
     disruptive = True
     kubernetes = True
+    enospc = True
 
     def disrupt(self):
         self.disrupt_nodetool_enospc(all_nodes=True)

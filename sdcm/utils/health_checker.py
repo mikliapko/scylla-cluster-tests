@@ -10,13 +10,15 @@
 # See LICENSE for more details.
 #
 # Copyright (c) 2020 ScyllaDB
-
+from __future__ import annotations
 import time
 import logging
-from typing import Generator
+from typing import Generator, TYPE_CHECKING
 
 from sdcm.sct_events import Severity
 from sdcm.sct_events.health import ClusterHealthValidatorEvent
+if TYPE_CHECKING:
+    from sdcm.utils.raft import Group0Member, TokenRingMember
 
 
 CHECK_NODE_HEALTH_RETRIES = 10
@@ -67,7 +69,7 @@ def check_nulls_in_peers(gossip_info, peers_details, current_node) -> HealthEven
         is_target = current_node.print_node_running_nemesis(node.ip_address)
         message = f"Current node {current_node}. Found nulls in system.peers for " \
             f"node {node}{is_target} with status {gossip_info.get(node, {}).get('status', 'n/a')} : " \
-            f"{peers_details[node]}"
+            f"{node_info}"
 
         # By Asias request: https://github.com/scylladb/scylla/issues/6397#issuecomment-666893877
         LOGGER.debug("Print all columns from system.peers for peer %s", node)
@@ -265,7 +267,7 @@ def check_schema_agreement_in_gossip_and_peers(node, retries: int = CHECK_NODE_H
     return err
 
 
-def check_group0_tokenring_consistency(group0_members: list[dict[str, str]],
-                                       tokenring_members: list[dict[str, str]],
+def check_group0_tokenring_consistency(group0_members: list[Group0Member],
+                                       tokenring_members: list[TokenRingMember],
                                        current_node) -> HealthEventsGenerator:
     return current_node.raft.check_group0_tokenring_consistency(group0_members, tokenring_members)

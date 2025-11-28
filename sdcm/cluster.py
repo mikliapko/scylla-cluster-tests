@@ -31,6 +31,7 @@ import traceback
 import itertools
 import json
 import shlex
+import uuid
 from decimal import Decimal, ROUND_UP
 from typing import List, Optional, Dict, Union, Set, Iterable, ContextManager, Any, IO, AnyStr, Callable, Literal
 from datetime import datetime, timezone
@@ -55,7 +56,7 @@ from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import Cluster as ClusterDriver
 from cassandra.cluster import NoHostAvailable
 from cassandra.policies import RetryPolicy
-from cassandra.policies import WhiteListRoundRobinPolicy, HostFilterPolicy, RoundRobinPolicy, RackAwareRoundRobinPolicy
+from cassandra.policies import WhiteListRoundRobinPolicy, RackAwareRoundRobinPolicy, LoadBalancingPolicy
 from cassandra.query import SimpleStatement
 from argus.common.enums import ResourceState
 from argus.client.sct.types import LogLink
@@ -90,6 +91,10 @@ from sdcm.utils.aws_kms import AwsKms
 from sdcm.utils.azure_utils import AzureService
 from sdcm.provision.azure.kms_provider import AzureKmsProvider
 from azure.core.exceptions import ResourceNotFoundError as AzureResourceNotFoundError
+from sdcm.utils.gcp_kms import GcpKms
+from sdcm.provision.gce.kms_provider import GcpKmsProvider
+from google.cloud.exceptions import GoogleCloudError
+from sdcm.keystore import KeyStore
 from sdcm.utils.cql_utils import cql_quote_if_needed
 from sdcm.utils.benchmarks import ScyllaClusterBenchmarkManager
 from sdcm.utils.common import (
@@ -236,6 +241,16 @@ class UserRemoteCredentials():
 
     def destroy(self):
         pass
+
+
+@dataclass
+class TokenRingMember:
+    """ Representation of a member in the token ring with hostid and IP address """
+    host_id: str
+    ip_address: str
+
+    def __getitem__(self, item):
+        return getattr(self, item)
 
 
 class BaseNode(AutoSshContainerMixin):
@@ -1072,7 +1087,9 @@ class BaseNode(AutoSshContainerMixin):
             node_name=str(self.name),
             system_event_patterns=SYSTEM_ERROR_EVENTS_PATTERNS,
             decoding_queue=self.test_config.DECODING_QUEUE,
-            log_lines=self.parent_cluster.params.get('logs_transport') in ['syslog-ng', 'vector']
+            log_lines=self.parent_cluster.params.get('logs_transport') in ['syslog-ng', 'vector'],
+            backtrace_stall_decoding=self.parent_cluster.params.get('backtrace_stall_decoding'),
+            backtrace_decoding_disable_regex=self.parent_cluster.params.get('backtrace_decoding_disable_regex'),
         )
         self._db_log_reader_thread.start()
 
@@ -1314,7 +1331,11 @@ class BaseNode(AutoSshContainerMixin):
         text = None
         if verbose:
             text = '%s: Waiting for SSH to be up' % self.name
-        wait.wait_for(func=self.remoter.is_up, step=10, text=text, timeout=timeout, throw_exc=True)
+
+        ssh_timeout_multiplier = 3
+        with adaptive_timeout(Operations.SSH_CONNECTIVITY, node=self, timeout=timeout, node_available=False):
+            wait.wait_for(func=self.remoter.is_up, step=10 * ssh_timeout_multiplier,
+                          text=text, timeout=timeout * ssh_timeout_multiplier, throw_exc=True)
 
     def is_port_used(self, port: int, service_name: str) -> bool:
         """Wait for the port to be used for the specified timeout. Returns True if used and False otherwise."""
@@ -1896,12 +1917,7 @@ class BaseNode(AutoSshContainerMixin):
             result = self.remoter.run('cat %s' % repo_path, verbose=True)
             verify_scylla_repo_file(result.stdout, is_rhel_like=False)
             self.install_package('gnupg2')
-            self.remoter.sudo("mkdir -m 0755 -p /etc/apt/keyrings")
-            for apt_key in self.parent_cluster.params.get("scylla_apt_keys"):
-                self.remoter.sudo(f"gpg --homedir /tmp --no-default-keyring --keyring /etc/apt/keyrings/scylladb.gpg "
-                                  f"--keyserver hkp://keyserver.ubuntu.com:80 --keyserver-options timeout=10 --recv-keys {apt_key}",
-                                  retry=3)
-            self.remoter.sudo("chmod 644 /etc/apt/keyrings/scylladb.gpg")
+            self.fetch_apt_keys()
         self.update_repo_cache()
 
     def download_scylla_manager_repo(self, scylla_repo: str) -> None:
@@ -1918,12 +1934,33 @@ class BaseNode(AutoSshContainerMixin):
         self.remoter.sudo(f"chmod 644 {repo_path}")
 
         if self.distro.is_debian_like:
-            self.remoter.sudo("mkdir -m 0755 -p /etc/apt/keyrings")
-            for apt_key in self.parent_cluster.params.get("scylla_apt_keys"):
-                self.remoter.sudo(f"gpg --homedir /tmp --no-default-keyring --keyring /etc/apt/keyrings/scylladb.gpg "
-                                  f"--keyserver hkp://keyserver.ubuntu.com:80 --recv-keys {apt_key}", retry=3)
-            self.remoter.sudo("chmod 644 /etc/apt/keyrings/scylladb.gpg")
+            self.fetch_apt_keys()
             self.remoter.sudo("apt-get update", ignore_status=True)
+
+    def fetch_apt_keys(self):
+        """
+        Fetch and install GPG keys for ScyllaDB's APT repository.
+
+        Uses a temporary keyring in /tmp to fetch and export the keys, then installs them
+        into /etc/apt/keyrings/scylladb.gpg. This approach is required for compatibility
+        with Debian 13 and newer, which have changed how APT keys are managed and require
+        keys to be stored in /etc/apt/keyrings rather than the legacy /etc/apt/trusted.gpg.
+        The temporary keyring avoids polluting the system keyring and ensures the correct
+        format for APT to use.
+        """
+        self.remoter.sudo("mkdir -m 0755 -p /etc/apt/keyrings")
+        temp_keyring = f"/tmp/temp-{uuid.uuid4()}.gpg"
+        try:
+            # Import all keys into a temporary keyring
+            for apt_key in self.parent_cluster.params.get("scylla_apt_keys"):
+                self.remoter.sudo(
+                    f"gpg --homedir /tmp --no-default-keyring --keyring {temp_keyring} --keyserver hkp://keyserver.ubuntu.com:80 --keyserver-options timeout=10 --recv-keys {apt_key}", retry=3)
+            # Export all keys at once to the keyring file
+            self.remoter.sudo(shell_script_cmd(
+                f"gpg --homedir /tmp --no-default-keyring --keyring {temp_keyring} --export --armor | gpg --dearmor > /etc/apt/keyrings/scylladb.gpg"), retry=3)
+        finally:
+            # Ensure cleanup
+            self.remoter.sudo(f"rm -f {temp_keyring}", ignore_status=True)
 
     @retrying(n=30, sleep_time=15, allowed_exceptions=(UnexpectedExit, Libssh2_UnexpectedExit,))
     def install_package(self,
@@ -2119,7 +2156,8 @@ class BaseNode(AutoSshContainerMixin):
             version = f"-{scylla_version}" if scylla_version else ""
             self.remoter.sudo('zypper install -y {}{}'.format(self.scylla_pkg(), version))
         else:
-            self.install_package(package_name="software-properties-common")
+            if self.distro.is_debian11 or self.distro.is_debian12:
+                self.install_package(package_name="software-properties-common")
             if self.distro.is_debian11:
                 self.install_package(package_name="apt-transport-https gnupg1-curl dirmngr openjdk-11-jre")
             elif self.distro.is_debian12:
@@ -2916,10 +2954,6 @@ class BaseNode(AutoSshContainerMixin):
         return f' ({node.running_nemesis} nemesis target node)' if node.running_nemesis else ' (not target node)'
 
     @property
-    def is_cqlsh_support_cloud_bundle(self):
-        return bool(self.parent_cluster.connection_bundle_file)
-
-    @property
     def is_replacement_by_host_id_supported(self):
         return ComparableScyllaVersion(self.scylla_version) > '5.2.0~dev'
 
@@ -2940,12 +2974,6 @@ class BaseNode(AutoSshContainerMixin):
         command = '"{}"'.format(command.strip().replace('"', '\\"'))
 
         cqlsh_cmd = self.add_install_prefix('/usr/bin/cqlsh')
-        if self.is_cqlsh_support_cloud_bundle:
-            connection_bundle_file = self.parent_cluster.connection_bundle_file
-            target_connection_bundle_file = str(Path('/tmp/') / connection_bundle_file.name)
-            self.remoter.send_files(str(connection_bundle_file), target_connection_bundle_file)
-
-            return f'{cqlsh_cmd} {options} -e {command} --cloudconf {target_connection_bundle_file}'
         return f'{cqlsh_cmd} {options} -e {command} {host}'
 
     def run_cqlsh(self, cmd, keyspace=None, timeout=120, verbose=True, split=False, connect_timeout=60,
@@ -3189,7 +3217,7 @@ class BaseNode(AutoSshContainerMixin):
         self.remoter.run(f"sudo kill -s SIGHUP {pid}")
 
     @retrying(n=5, sleep_time=5, raise_on_exceeded=False)
-    def get_token_ring_members(self) -> list[dict[str, str]]:
+    def get_token_ring_members(self) -> list[TokenRingMember]:
         self.log.debug("Get token ring members")
         token_ring_members = []
         token_ring_members_cmd = build_node_api_command('/storage_service/host_id')
@@ -3203,7 +3231,7 @@ class BaseNode(AutoSshContainerMixin):
             return []
 
         for member in result_json:
-            token_ring_members.append({"host_id": member.get("value"), "ip_address": member.get("key")})
+            token_ring_members.append(TokenRingMember(host_id=member.get("value"), ip_address=member.get("key")))
         return token_ring_members
 
     @retrying(n=360, sleep_time=10, allowed_exceptions=NodeNotReady, message="Waiting for native_transport")
@@ -3449,12 +3477,16 @@ class BaseCluster:
     def get_datacenter_name_per_region(self, db_nodes=None):
         datacenter_name_per_region = {}
         for region, nodes in self.nodes_by_region(nodes=db_nodes).items():
-            if status := nodes[0].get_nodes_status():
+            node = next((node for node in nodes if node.db_up()), None)
+            if node is None:
+                LOGGER.error("No DB up node found in region %s to get datacenter name", region)
+                continue
+            if status := node.get_nodes_status():
                 # If `nodetool status` failed to get status for the node
-                if dc_name := status.get(nodes[0], {}).get('dc'):
+                if dc_name := status.get(node, {}).get('dc'):
                     datacenter_name_per_region[region] = dc_name
             else:
-                LOGGER.error("Failed to get nodes status from node %s", nodes[0].name)
+                LOGGER.error("Failed to get nodes status from node %s", node.name)
 
         return datacenter_name_per_region
 
@@ -3655,7 +3687,7 @@ class BaseCluster:
         return ssl_context
 
     def _create_session(self, node, keyspace, user, password, compression, protocol_version, load_balancing_policy=None, port=None,  # noqa: PLR0913
-                        ssl_context=None, node_ips=None, connect_timeout=None, verbose=True, connection_bundle_file=None):
+                        ssl_context=None, node_ips=None, connect_timeout=None, verbose=True):
         if not port:
             port = node.CQL_PORT
 
@@ -3681,8 +3713,6 @@ class BaseCluster:
         self.log.debug("ssl_context: %s", str(ssl_context))
 
         kwargs = dict(contact_points=node_ips, port=port, ssl_context=ssl_context)
-        if connection_bundle_file:
-            kwargs = dict(scylla_cloud=connection_bundle_file)
         cluster_driver = ClusterDriver(auth_provider=auth_provider,
                                        compression=compression,
                                        protocol_version=protocol_version,
@@ -3704,7 +3734,32 @@ class BaseCluster:
 
         return ScyllaCQLSession(session, cluster_driver, verbose)
 
-    def get_load_balancing_policy(self, whitelist_nodes=None):
+    def get_load_balancing_policy(self, whitelist_nodes: Optional[list[BaseNode]] = None) -> tuple[LoadBalancingPolicy, list[str | None]]:
+        """
+        Determines and returns the appropriate load balancing policy along with the list of node IPs.
+
+        This method selects a load balancing policy based on the cluster configuration and the provided
+        whitelist of nodes. By default, it uses the `WhiteListRoundRobinPolicy` with the IPs of the nodes
+        in the cluster. If the cluster is configured with multiple racks/availability zones and the
+        "rack_aware_loader" parameter is enabled, it switches to the `RackAwareRoundRobinPolicy`.
+
+        Args:
+            whitelist_nodes (list[BaseNode], optional): A list of nodes to be included in the load balancing
+                policy. If not provided, all nodes in the cluster are used.
+
+        Returns:
+            tuple[LoadBalancingPolicy, list[str | None]]: A tuple containing:
+                - The selected load balancing policy (`WhiteListRoundRobinPolicy` or `RackAwareRoundRobinPolicy`).
+                - A list of node IPs used in the policy.
+
+        Notes:
+            - The `RackAwareRoundRobinPolicy` is used only if:
+                1. The "rack_aware_loader" parameter is enabled.
+                2. The cluster has more than one rack/availability zone.
+            - The `RackAwareRoundRobinPolicy` is configured based on the rack and datacenter of the first
+              loader node in the cluster.
+            - The `whitelist_nodes` parameter is typically used by nemeses that pass a list of alive nodes.
+        """
         node_ips = self.get_node_cql_ips(nodes=whitelist_nodes if whitelist_nodes else self.nodes)
         wlrr = WhiteListRoundRobinPolicy(node_ips)
         if self.params.get("rack_aware_loader") and self.racks_count > 1:
@@ -3716,7 +3771,9 @@ class BaseCluster:
             loader = self.nodes[0].test_config.tester_obj().loaders.nodes[0]
             loader_rack = loader.node_rack
             loader_dc = loader.datacenter
-            wlrr = RackAwareRoundRobinPolicy(local_dc=loader_dc, local_rack=loader_rack)
+            datacenter_name_per_region = self.get_datacenter_name_per_region(db_nodes=self.nodes)
+            datacenter_name = datacenter_name_per_region.get(loader_dc) if datacenter_name_per_region else loader_dc
+            wlrr = RackAwareRoundRobinPolicy(local_dc=datacenter_name, local_rack=loader_rack)
             LOGGER.debug("Using RackAwareRoundRobinPolicy. Loader rack: %s. Loader datacenter: %s. Node IPs: %s",
                          loader_rack, loader_dc, node_ips)
         return wlrr, node_ips
@@ -3749,43 +3806,24 @@ class BaseCluster:
             - If a connection bundle file is available in the parent cluster, it will be used for the connection.
             - If no connection bundle file is provided, the method will use the WhiteListRoundRobinPolicy with the specified nodes.
         """
-        if connection_bundle_file := node.parent_cluster.connection_bundle_file:
-            wlrr = None
-            node_ips = []
-        else:
-            wlrr, node_ips = self.get_load_balancing_policy(whitelist_nodes=whitelist_nodes)
 
+        wlrr, node_ips = self.get_load_balancing_policy(whitelist_nodes=whitelist_nodes)
         return self._create_session(node=node, keyspace=keyspace, user=user, password=password, compression=compression,
                                     protocol_version=protocol_version, load_balancing_policy=wlrr, port=port, ssl_context=ssl_context,
-                                    node_ips=node_ips, connect_timeout=connect_timeout, verbose=verbose,
-                                    connection_bundle_file=connection_bundle_file)
+                                    node_ips=node_ips, connect_timeout=connect_timeout, verbose=verbose)
 
     def cql_connection_exclusive(self, node, keyspace=None, user=None,
                                  password=None, compression=True,
                                  protocol_version=None, port=None,
                                  ssl_context=None, connect_timeout=100, verbose=True):
-        if connection_bundle_file := node.parent_cluster.connection_bundle_file:
-            # TODO: handle the case of multiple datacenters
-            bundle_yaml = yaml.safe_load(connection_bundle_file.open('r', encoding='utf-8'))
-            node_domain = None
-            for _, connection_data in bundle_yaml.get('datacenters', {}).items():
-                node_domain = connection_data.get('nodeDomain').strip()
-            assert node_domain, f"didn't found nodeDomain in bundle [{connection_bundle_file}]"
-
-            def host_filter(host):
-                return str(host.host_id) == str(node.host_id) or node_domain == host.endpoint._server_name
-            wlrr = HostFilterPolicy(child_policy=RoundRobinPolicy(), predicate=host_filter)
-            node_ips = []
-        else:
-            # Use WhiteListRoundRobinPolicy with a single node IP.
-            # RackAwareRoundRobinPolicy is not applicable for exclusive node connections,
-            # as it operates based on rack and datacenter, not individual nodes.
-            node_ips = [node.cql_address]
-            wlrr = WhiteListRoundRobinPolicy(node_ips)
+        # Use WhiteListRoundRobinPolicy with a single node IP.
+        # RackAwareRoundRobinPolicy is not applicable for exclusive node connections,
+        # as it operates based on rack and datacenter, not individual nodes.
+        node_ips = [node.cql_address]
+        wlrr = WhiteListRoundRobinPolicy(node_ips)
         return self._create_session(node=node, keyspace=keyspace, user=user, password=password, compression=compression,
                                     protocol_version=protocol_version, load_balancing_policy=wlrr, port=port, ssl_context=ssl_context,
-                                    node_ips=node_ips, connect_timeout=connect_timeout, verbose=verbose,
-                                    connection_bundle_file=connection_bundle_file)
+                                    node_ips=node_ips, connect_timeout=connect_timeout, verbose=verbose)
 
     @retrying(n=8, sleep_time=15, allowed_exceptions=(NoHostAvailable,))
     def cql_connection_patient(self, node, keyspace=None,
@@ -4266,11 +4304,6 @@ class BaseScyllaCluster:
             msldap_server_info=KeyStore().get_ldap_ms_ad_credentials()
         )
         return ScyllaYaml(**cluster_params_builder.model_dump(exclude_unset=True, exclude_none=True))
-
-    @property
-    def connection_bundle_file(self) -> Path | None:
-        bundle_file = self.params.get("k8s_connection_bundle_file")
-        return Path(bundle_file) if bundle_file else None
 
     @property
     def racks(self) -> Set[int]:
@@ -4864,6 +4897,34 @@ class BaseScyllaCluster:
 
         threading.Thread(target=_rotate, daemon=True, name='AzureKmsRotationThread').start()
         self.log.info("Started Azure KMS rotation thread for test: %s", test_id)
+        return None
+
+    def start_gcp_key_rotation_thread(self) -> None:
+        if self.params.get("cluster_backend") != 'gce':
+            return None
+        if not self.params.get("enable_kms_key_rotation"):
+            return None
+
+        test_id = str(self.test_config.test_id())
+
+        def _rotate():
+            gcp_credentials = KeyStore().get_gcp_credentials()
+            gcp_kms_config = KeyStore().get_gcp_kms_config()
+
+            project_id = gcp_credentials['project_id']
+            location = gcp_kms_config['keyring_location']
+            key_name = GcpKmsProvider.get_key_name_for_test(test_id)
+            gcp_kms = GcpKms(project_id, location, key_name)
+            while True:
+                time.sleep(self.params.get("kms_key_rotation_interval") * 60)
+                try:
+                    gcp_kms.rotate_key()
+                    self.log.info("GCP KMS key rotated for test %s: %s", test_id, key_name)
+                except GoogleCloudError as e:
+                    self.log.error("Failed to rotate GCP KMS key '%s': %s", key_name, e)
+
+        threading.Thread(target=_rotate, daemon=True, name='GcpKmsRotationThread').start()
+        self.log.info("Started GCP KMS rotation thread for test: %s", test_id)
         return None
 
     def scylla_configure_non_root_installation(self, node, devname):

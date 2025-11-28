@@ -14,6 +14,7 @@
 import os
 import ipaddress
 import logging
+import re
 from functools import cached_property
 from types import SimpleNamespace
 from typing import Any
@@ -26,6 +27,7 @@ from sdcm import cluster, wait
 from sdcm.cloud_api_client import ScyllaCloudAPIClient, CloudProviderType
 from sdcm.utils.aws_region import AwsRegion
 from sdcm.utils.cidr_pool import CidrPoolManager, CidrAllocationError
+from sdcm.utils.cloud_api_utils import XCLOUD_VS_INSTANCE_TYPES, compute_cluster_exp_hours
 from sdcm.utils.gce_region import GceRegion
 from sdcm.test_config import TestConfig
 from sdcm.remote import RemoteCmdRunner, shell_script_cmd
@@ -45,15 +47,49 @@ def xcloud_super_if_supported(method):
     """
     Decorator for instance methods: if self.xcloud_connect_supported is True,
     call the super method with all arguments; otherwise, do nothing.
+
+    This decorator correctly handles inheritance by calling the parent class
+    of where the method is defined, not the parent of the runtime instance type.
     """
+    # Extract owner class name from 'ClassName.method_name' format
+    # method.__qualname__ provides the qualified name like "CloudNode.wait_ssh_up"
+    # or "test_func.<locals>.CloudNode.wait_ssh_up" for nested classes
+    # We parse this to get "CloudNode" - the class where the method is defined
+    qualname_parts = method.__qualname__.rsplit('.', 1)
+    if len(qualname_parts) == 2:
+        # Extract just the class name (last component before method name)
+        # e.g., "test.<locals>.CloudNode" -> "CloudNode"
+        owner_class_name = qualname_parts[0].split('.')[-1]
+    else:
+        owner_class_name = None
+
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
         if getattr(self, 'xcloud_connect_supported', False):
-            # Call the super method with the same name and arguments
+            # Get the owner class from the instance's class hierarchy
+            if owner_class_name:
+                owner_class = None
+                for cls in type(self).__mro__:
+                    if cls.__name__ == owner_class_name:
+                        owner_class = cls
+                        break
+
+                if owner_class:
+                    # Call the parent class of the owner class
+                    return getattr(super(owner_class, self), method.__name__)(*args, **kwargs)
+
+            # Fallback for edge cases where owner class cannot be found
+            # This should not happen in normal usage; log a warning if it does
+            self.log.warning(
+                f"Unable to find owner class '{owner_class_name}' in MRO for {method.__name__}. "
+                f"Using fallback super() call which may cause issues with deep inheritance."
+            )
             return getattr(super(type(self), self), method.__name__)(*args, **kwargs)
-        # Optionally, log or return None
+
+        # Skip when xcloud is not supported
         self.log.debug(f"Skip {method.__name__} on scylla-cloud, no ssh connectivity available")
         return None
+
     return wrapper
 
 
@@ -77,6 +113,27 @@ def download_file(url, dest, chunk_size=16384):
             os.remove(tmp_dest)
         LOGGER.error(f"Failed to download {url} to {dest}: {e}")
         raise
+
+
+CLUSTER_NAME_REGEX = re.compile(r'\b[0-9a-f]{8}\b')
+
+
+def extract_short_test_id_from_name(name: str) -> str | None:
+    """Extract short test ID (8 hex chars) from cluster/resource name.
+
+    Handles names like:
+    - "PR-provision-test-fruch-db-cluster-3dc74f22-keep-4h" -> "3dc74f22"
+    - "my-cluster-12345678" -> "12345678"
+    - "simple-3dc74f22" -> "3dc74f22"
+
+    Returns None if no test ID pattern is found.
+    """
+    # Pattern to match 8 hexadecimal characters (typical short UUID format)
+    # This looks for 8 hex chars that are either at word boundaries or surrounded by hyphens
+    if match := CLUSTER_NAME_REGEX.search(name.lower()):
+        return match.group(0)
+
+    return
 
 
 VECTOR_BASE_URL = "https://packages.timber.io/vector/latest"
@@ -201,10 +258,15 @@ class CloudNode(cluster.BaseNode):
     def _init_port_mapping(self):
         pass
 
-    def set_keep_alive(self):
-        # TODO: Implement keep alive tagging for Scylla Cloud
-        self.log.info("Setting keep alive for node %s", self.name)
+    # For cloud clusters, the keep duration is calculated and set during cluster creation.
+    # _set_keep_alive and _set_keep_duration methods in base classes are invoked after cluster
+    # creation, during nodes init, when it is already late to modify cluster details.
+    # The basic implementations of these methods remain here for backward compatibility.
+    def _set_keep_alive(self) -> bool:
         return True
+
+    def _set_keep_duration(self, duration_in_hours: int) -> None:
+        pass
 
     def restart(self):
         raise NotImplementedError("There is no public Scylla Cloud API for node restart.\n"
@@ -251,7 +313,7 @@ class CloudNode(cluster.BaseNode):
             self.remoter = RemoteCmdRunner(**ssh_login_info)
             self.log.debug(self.remoter.ssh_debug_cmd())
         else:
-            self.log.debug("XCloud connectivity is not supported, SSH remoter is not initialized")
+            self.log.warning("XCloud connectivity is not supported, SSH remoter is not initialized")
 
     @xcloud_super_if_supported
     def wait_ssh_up(self, verbose=True, timeout=500):
@@ -314,6 +376,94 @@ class CloudNode(cluster.BaseNode):
             is_enabled=True,
             is_ready=lambda: True)
 
+    @property
+    def scylla_shards(self) -> int:
+        if self.xcloud_connect_supported:
+            return super().scylla_shards
+        self.log.warning("XCloud connectivity is not supported, skip collecting scylla_shards info")
+        return 0
+
+    @property
+    def kernel_version(self):
+        if self.xcloud_connect_supported:
+            return super().kernel_version
+        self.log.warning("XCloud connectivity is not supported, skip collecting kernel version info")
+        return "N/A"
+
+    @property
+    def scylla_version_detailed(self):
+        return (super().scylla_version_detailed
+                if self.xcloud_connect_supported
+                else self.parent_cluster.params.get('scylla_version'))
+
+
+class CloudVSNode(CloudNode):
+    """A Vector Search node running on Scylla Cloud"""
+
+    def __init__(
+        self,
+        cloud_instance_data: dict[str, Any],
+        parent_cluster: cluster.BaseScyllaCluster,
+        node_prefix: str = 'vs-node',
+        node_index: int = 1,
+        base_logdir: str | None = None,
+        dc_idx: int = 0,
+        rack: int = 0
+    ):
+        super().__init__(
+            cloud_instance_data=cloud_instance_data,
+            parent_cluster=parent_cluster,
+            node_prefix=node_prefix,
+            node_index=node_index,
+            base_logdir=base_logdir,
+            dc_idx=dc_idx,
+            rack=rack
+        )
+
+
+class CloudManagerNode(CloudNode):
+    """A Scylla Manager node running on Scylla Cloud"""
+
+    def __init__(
+        self,
+        parent_cluster: cluster.BaseScyllaCluster,
+        node_prefix: str = 'manager',
+        node_index: int = 1,
+        base_logdir: str | None = None,
+        dc_idx: int = 0,
+        rack: int = 0
+    ):
+        # minimal cloud_instance_data for manager node (most of the node details will be fetched via SDM)
+        cloud_instance_data = {
+            'id': None,
+            'privateIp': None,
+            'publicIp': None,
+            'status': 'ACTIVE',
+            'instanceType': 'CloudManaged'}
+
+        super().__init__(
+            cloud_instance_data=cloud_instance_data,
+            parent_cluster=parent_cluster,
+            node_prefix=node_prefix,
+            node_index=node_index,
+            base_logdir=base_logdir,
+            dc_idx=dc_idx,
+            rack=rack)
+
+    def _init_remoter(self, ssh_login_info=None):
+        localhost = TestConfig().tester_obj().localhost
+        if localhost.xcloud_connect_supported(self.parent_cluster.params):
+            sdm_env = self.parent_cluster.params.cloud_env_credentials.get("sdm_environment")
+            ssh_login_info = localhost.xcloud_connect_get_manager_ssh_address(
+                cluster_id=self._cluster_id, sdm_environment=sdm_env)
+            self.remoter = RemoteCmdRunner(**ssh_login_info)
+        else:
+            self.log.warning("XCloud connectivity is not supported, Manager node SSH remoter is not initialized")
+
+    @property
+    def node_type(self) -> str:
+        return "manager"
+
 
 class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
     """Scylla DB cluster running on Scylla Cloud"""
@@ -352,8 +502,9 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
 
         self._cluster_created = False
         self._pending_node_configs = []
-        if self.test_config.REUSE_CLUSTER and self._cluster_id:
-            self._cluster_created = True
+        self._deploy_vs_nodes = int(params.get('n_vector_store_nodes')) > 0
+        self.vs_nodes = []
+        self.manager_node = None
 
         cluster_prefix = cluster.prepend_user_prefix(user_prefix, 'db-cluster')
         node_prefix = cluster.prepend_user_prefix(user_prefix, 'db-node')
@@ -366,9 +517,6 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
             region_names=params.cloud_provider_params.get('region'),
             node_type=node_type,
             add_nodes=add_nodes)
-
-        if self.test_config.REUSE_CLUSTER and self._cluster_id:
-            self._reuse_existing_cluster()
 
     @property
     def parallel_startup(self):
@@ -399,12 +547,29 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
         return self._api_client.get_cluster_details(
             account_id=self._account_id, cluster_id=self._cluster_id, enriched=True)['dc']['id']
 
-    def _create_node(self, cloud_instance_data: dict[str, Any], node_index: int, dc_idx: int, rack: int) -> CloudNode:
+    def _resolve_cluster_id(self) -> int:
+        """Resolve cluster ID from test_id for cluster reuse"""
+        search_pattern = str(self.uuid)[:8]
+        clusters = self._api_client.search_clusters_by_name_pattern(
+            account_id=self._account_id, name_pattern=search_pattern)
+        if not clusters:
+            raise ScyllaCloudError(
+                f"No Scylla Cloud cluster found with test_id pattern '{search_pattern}' in name.\n"
+                f"Check that the cluster wasn't deleted and test_id is correct. Full test_id: {self.uuid}")
+
+        cluster = clusters[0]
+        cluster_id = cluster.get('id')
+        self.log.info("Found cluster to reuse: '%s' (ID: %s, Status: %s)",
+                      cluster.get('clusterName'), cluster_id, cluster.get('status'))
+        return cluster_id
+
+    def _create_node(self, cloud_instance_data: dict[str, Any], node_index: int, dc_idx: int, rack: int,
+                     node_class: type[CloudNode] = CloudNode, node_prefix: str | None = None) -> CloudNode:
         try:
-            node = CloudNode(
+            node = node_class(
                 cloud_instance_data=cloud_instance_data,
                 parent_cluster=self,
-                node_prefix=self.node_prefix,
+                node_prefix=node_prefix or self.node_prefix,
                 node_index=node_index,
                 base_logdir=self.logdir,
                 dc_idx=dc_idx,
@@ -421,16 +586,19 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
                   rack: int = 0,
                   enable_auto_bootstrap: bool = False,
                   instance_type: str | None = None) -> list[CloudNode]:
-        """
-        Add nodes to cluster. For cloud backend, this creates the entire cluster
-        on first call, then performs resize for subsequent calls.
-        """
+        """Create a new cluster with the specified number of nodes or reuse an existing one"""
         if not count:
             return []
 
+        if self.nodes:
+            return self.nodes
+
+        if self.test_config.REUSE_CLUSTER:
+            self._cluster_id = self._resolve_cluster_id()
+            self._reuse_existing_cluster()
+            return self.nodes
+
         self.log.info("Adding %s nodes to Scylla Cloud cluster", count)
-        if self._cluster_created:
-            return self._resize_cluster(count, dc_idx, rack, instance_type)
         return self._create_cluster(count, dc_idx, rack, enable_auto_bootstrap, instance_type)
 
     def _create_cluster(self,
@@ -448,6 +616,8 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
 
         self.log.debug("Cluster creation initiated. Cluster ID: %s", self._cluster_id)
         self._wait_for_cluster_ready()
+        if self._deploy_vs_nodes:
+            self._wait_for_vs_nodes_ready()
 
         if self.vpc_peering_enabled:
             self.setup_vpc_peering(self.dc_id)
@@ -455,10 +625,43 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
         self._get_cluster_credentials()
 
         nodes = self._init_nodes_from_cluster(count, dc_idx, rack)
+        vs_nodes = self._init_vs_nodes_from_cluster() if self._deploy_vs_nodes else []
+
+        self._init_manager_node()
+
         self._cluster_created = True
-        self.log.info("Successfully created cluster %s with %s nodes", self._cluster_id, len(nodes))
+        self.log.info(
+            "Successfully created cluster %s with %s DB nodes%s%s",
+            self.name, len(nodes),
+            " and {} VS nodes".format(len(vs_nodes)) if vs_nodes else "",
+            " and Manager node" if self.manager_node else "")
 
         return nodes
+
+    def _init_nodes_from_data(
+        self,
+        nodes_data: list[dict[str, Any]],
+        node_class: type[CloudNode] = CloudNode,
+        node_prefix: str | None = None,
+        dc_idx: int = 0,
+        rack: int = 0
+    ) -> list[CloudNode]:
+        """Create cloud node objects from API data"""
+        if not nodes_data:
+            return []
+
+        self.log.info("Initializing %s %s objects", len(nodes_data), node_class.__name__)
+
+        return [
+            self._create_node(
+                cloud_instance_data=node_data,
+                node_index=i,
+                dc_idx=dc_idx,
+                rack=rack,
+                node_class=node_class,
+                node_prefix=node_prefix)
+            for i, node_data in enumerate(nodes_data, start=1)
+        ]
 
     def _init_nodes_from_cluster(self, count: int, dc_idx: int, rack: int) -> list[CloudNode]:
         """Decompose the created cluster into individual CloudNode objects"""
@@ -469,22 +672,41 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
         if len(cluster_nodes) < count:
             self.log.warning("Expected %s nodes, but found %s", count, len(cluster_nodes))
 
-        self.log.info("Initializing %s individual CloudNode node objects", count)
-        created_nodes = []
-        for i, node_data in enumerate(cluster_nodes[:count]):
-            self._node_index += 1
-            node_rack = self._node_index % self.racks_count if rack is None else rack
-
-            node = self._create_node(
-                cloud_instance_data=node_data,
-                node_index=self._node_index,
-                dc_idx=dc_idx,
-                rack=node_rack)
-            self.nodes.append(node)
-            created_nodes.append(node)
-
-            self.log.info("Created node %s with public IP: %s", node.name, node.public_ip_address)
+        created_nodes = self._init_nodes_from_data(
+            nodes_data=cluster_nodes[:count], node_class=CloudNode, dc_idx=dc_idx, rack=rack)
+        self.nodes.extend(created_nodes)
         return created_nodes
+
+    @property
+    def vs_nodes_data(self) -> list[dict]:
+        """Fetch and flatten Vector Search nodes data from Scylla Cloud API"""
+        vs_info = self._api_client.get_vector_search_nodes(
+            account_id=self._account_id, cluster_id=self._cluster_id, dc_id=self.dc_id)
+        return [
+            node for az in vs_info.get('availabilityZones', [])
+            for node in az.get('nodes', [])
+        ]
+
+    def _init_vs_nodes_from_cluster(self) -> list[CloudVSNode]:
+        """Decompose the created cluster VS nodes info into individual CloudVSNode objects"""
+        created_nodes = self._init_nodes_from_data(
+            nodes_data=self.vs_nodes_data, node_class=CloudVSNode, node_prefix='vs-node', dc_idx=0, rack=0)
+        self.vs_nodes.extend(created_nodes)
+        return created_nodes
+
+    def _init_manager_node(self) -> None:
+        localhost = TestConfig().tester_obj().localhost
+        if not localhost.xcloud_connect_supported(self.params):
+            self.log.debug("XCloud connectivity not supported, skipping Manager node initialization")
+            return
+
+        self.log.info("Initializing Manager node for cluster %s", self._cluster_id)
+
+        self._wait_for_manager_node_ready()
+        self.manager_node = CloudManagerNode(parent_cluster=self)
+        self.manager_node._init_remoter()
+        self.manager_node.wait_ssh_up()
+        self.log.info("Manager node SSH connection established")
 
     def _prepare_cluster_config(self, node_count: int, instance_type: str) -> dict[str, Any]:
         if self.scaling_config:
@@ -515,9 +737,19 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
             except CidrAllocationError as e:
                 raise ScyllaCloudError(f"CIDR allocation failed: {e}") from e
 
-        config = {
+        vs_config = {
+            'defaultNodes': int(self.params.get('n_vector_store_nodes')),
+            'defaultInstanceTypeId': XCLOUD_VS_INSTANCE_TYPES[self._cloud_provider][self.params.get('instance_type_vector_store')]
+        } if self._deploy_vs_nodes else None
+
+        expiration_hours = compute_cluster_exp_hours(
+            self.test_config.TEST_DURATION, self.test_config.should_keep_alive(self.node_type))
+        cluster_name = f"{self.name}-keep-{expiration_hours}h"
+        self.log.info("Cluster will be created with expiration time of %s hours", expiration_hours)
+
+        return {
             'account_id': self._account_id,
-            'cluster_name': self.name,
+            'cluster_name': cluster_name,
             'scylla_version': self.params.get('scylla_version'),
             'cidr_block': cidr_block,
             'broadcast_type': broadcast_type,
@@ -536,10 +768,9 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
             'maintenance_windows': [],
             'prom_proxy': True,
             'scaling': self.scaling_config,
-            'tablets': tablets
+            'tablets': tablets,
+            'vector_search': vs_config
         }
-
-        return config
 
     def _wait_for_cluster_ready(self, timeout: int = 600) -> None:
         self.log.info("Waiting for Scylla Cloud cluster to be ready")
@@ -564,6 +795,61 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
             throw_exc=True)
         self.log.info("Scylla Cloud cluster is ready")
 
+    def _wait_for_vs_nodes_ready(self, timeout: int = 600) -> None:
+        self.log.info("Waiting for Vector Search nodes to be ready")
+
+        def check_vs_nodes_status():
+            try:
+                all_nodes = self.vs_nodes_data
+                if not all_nodes:
+                    return False
+
+                active_count = sum(node.get('status', '').upper() == 'ACTIVE' for node in all_nodes)
+                self.log.debug("VS nodes status: %d/%d active", active_count, len(all_nodes))
+                return active_count == len(all_nodes)
+            except Exception as e:  # noqa: BLE001
+                self.log.debug("Error checking Vector Search nodes status: %s", e)
+                return False
+
+        wait.wait_for(
+            func=check_vs_nodes_status,
+            step=15,
+            text="Waiting for Vector Search nodes to be ready",
+            timeout=timeout,
+            throw_exc=True)
+        self.log.info("Vector Search nodes are ready")
+
+    def _wait_for_manager_node_ready(self, timeout: int = 600) -> None:
+        self.log.info("Waiting for Manager node installation to complete")
+        cluster_requests = self._api_client.get_cluster_requests(
+            account_id=self._account_id, cluster_id=self._cluster_id)
+        mgr_request = next((req for req in cluster_requests if req.get('requestType') == 'INSTALL_MANAGER'), None)
+        if not mgr_request:
+            self.log.warning("No INSTALL_MANAGER request found for cluster %s", self._cluster_id)
+            return
+
+        mgr_request_id = mgr_request.get('id')
+        self.log.info("Found INSTALL_MANAGER request (ID: %s), waiting for completion", mgr_request_id)
+
+        def is_manager_ready():
+            details = self._api_client.get_cluster_request_details(
+                account_id=self._account_id, request_id=mgr_request_id)
+            status = details.get('status', '').upper()
+            self.log.debug("Manager installation status: %s (%s%%)", status, details.get('progressPercent', 0))
+
+            if status == 'FAILED':
+                raise ScyllaCloudError(f"Manager installation failed: {details}")
+
+            return status == 'COMPLETED'
+
+        wait.wait_for(
+            func=is_manager_ready,
+            step=15,
+            text="Waiting for Manager node installation to complete",
+            timeout=timeout,
+            throw_exc=True)
+        self.log.info("Manager node installation completed")
+
     def get_promproxy_config(self):
         """Retrieve Prometheus proxy configuration for Scylla Cloud cluster"""
         return self._api_client.get_cluster_promproxy_config(
@@ -586,29 +872,59 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
 
     def _reuse_existing_cluster(self):
         """Decompose the existing cluster into individual CloudNode objects"""
-        self.log.info("Reusing existing Scylla Cloud cluster: %s", self._cluster_id)
-        try:
-            cluster_details = self._api_client.get_cluster_details(
-                account_id=self._account_id, cluster_id=self._cluster_id)
-            self.name = cluster_details.get('clusterName', self.name)
-            self.log.info("Found existing cluster: %s", self.name)
+        self.log.info("Reusing existing Scylla Cloud cluster (ID: %s)", self._cluster_id)
 
-            cluster_nodes = self._api_client.get_cluster_nodes(
-                account_id=self._account_id, cluster_id=self._cluster_id, enriched=True)
+        cluster_details = self._api_client.get_cluster_details(
+            account_id=self._account_id, cluster_id=self._cluster_id, enriched=True)
 
-            self.log.debug("Reusing %s nodes from existing cluster", len(cluster_nodes))
-            for i, node_data in enumerate(cluster_nodes):
-                node_index = i + 1
-                rack = node_index % self.racks_count
-                node = self._create_node(
-                    cloud_instance_data=node_data,
-                    node_index=node_index,
-                    dc_idx=0,
-                    rack=rack)
-                self.nodes.append(node)
-            self._cluster_created = True
-        except Exception as e:
-            raise ScyllaCloudError(f"Failed to reuse cluster: {e}") from e
+        # validate cluster status
+        self.name = cluster_details.get('clusterName', self.name)
+        cluster_status = cluster_details.get('status', '').upper()
+        if cluster_status != 'ACTIVE':
+            raise ScyllaCloudError(f"Cluster is not in 'ACTIVE' status. Current status: '{cluster_status}'")
+
+        # validate DB nodes config parameters
+        db_nodes = self._api_client.get_cluster_nodes(
+            account_id=self._account_id, cluster_id=self._cluster_id, enriched=True)
+        if len(db_nodes) != self.params.get('n_db_nodes'):
+            raise ScyllaCloudError(
+                "DB node count mismatch. Update 'n_db_nodes' in test config or provision a new cluster.")
+        if db_nodes[0].get('instance', {}).get('externalId') != self.params.cloud_provider_params.get('instance_type_db'):
+            raise ScyllaCloudError(
+                "DB node instance type mismatch. Update DB instance type in test config or provision a new cluster.")
+
+        # validate Scylla version
+        version = cluster_details.get('scyllaVersion', {}).get('version')
+        expected_version = self.params.get('scylla_version')
+        if version != expected_version:
+            self.log.warning("Scylla version mismatch: '%s' in cluster, '%s' in test config. "
+                             "Continuing with existing cluster version.", version, expected_version)
+
+        # validate VS nodes config parameters
+        vs_nodes = (self._api_client.get_vector_search_nodes(
+            account_id=self._account_id, cluster_id=self._cluster_id, dc_id=self.dc_id).get('availabilityZones') or [])
+        if vs_nodes:
+            vs_nodes_per_az = [
+                n for n in vs_nodes[0].get('nodes', []) if n.get('status') not in ('DELETED', 'PENDING_DELETE')]
+            if vs_nodes_per_az and len(vs_nodes_per_az) != int(self.params.get('n_vector_store_nodes')):
+                raise ScyllaCloudError("Vector Search node count mismatch. "
+                                       "Update 'n_vector_store_nodes' in test config or provision a new cluster.")
+
+        self._get_cluster_credentials()
+        if self.vpc_peering_enabled:
+            self._retrieve_vpc_peering_info()
+
+        self.nodes.extend(self._init_nodes_from_data(db_nodes, CloudNode))
+        if vs_nodes:
+            self.vs_nodes.extend(self._init_nodes_from_data(self.vs_nodes_data, CloudVSNode, node_prefix='vs-node'))
+
+        self._init_manager_node()
+
+        self._cluster_created = True
+        self.log.info("Successfully reused cluster '%s' with %s DB nodes%s%s",
+                      self.name, len(db_nodes),
+                      f" and {len(vs_nodes)} VS nodes" if vs_nodes else "",
+                      " and Manager node" if self.manager_node else "")
 
     @staticmethod
     def _wait_for_preinstalled_scylla(node):
@@ -680,6 +996,19 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
 
     def get_node_ips_param(self, public_ip=True):
         return 'xcloud_nodes_public_ip' if public_ip else 'xcloud_nodes_private_ip'
+
+    def _retrieve_vpc_peering_info(self) -> None:
+        """Retrieve existing VPC peering information"""
+        self.log.debug("Retrieving existing VPC peering info for cluster %s", self._cluster_id)
+        vpc_peers = self._api_client.get_vpc_peers(account_id=self._account_id, cluster_id=self._cluster_id)
+        if not vpc_peers:
+            return
+
+        if len(vpc_peers) > 1:
+            self.log.warning("Multiple VPC peering connections found (%s), using the first one", len(vpc_peers))
+        self.vpc_peering_id = vpc_peers[0].get('id')
+        self.vpc_peering_details = self._api_client.get_vpc_peer_details(
+            account_id=self._account_id, cluster_id=self._cluster_id, peer_id=self.vpc_peering_id)
 
     def setup_vpc_peering(self, dc_id: int) -> None:
         """Set up VPC peering connection between SCT and Scylla Cloud VPC"""
@@ -838,3 +1167,7 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
     @cached_property
     def gcp_peering_name(self) -> str:
         return f"sct-to-scylla-cloud-{self.vpc_peering_details.get('projectId')}-{self.vpc_peering_id}"
+
+    @property
+    def scylla_manager_node(self) -> cluster.BaseNode:
+        return self.manager_node

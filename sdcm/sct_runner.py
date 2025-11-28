@@ -28,13 +28,14 @@ from math import ceil
 from typing import TYPE_CHECKING
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from textwrap import dedent
 
 import boto3
 import pytz
 from azure.core.exceptions import ResourceNotFoundError as AzureResourceNotFoundError
 from azure.mgmt.compute.models import GalleryImageVersion
-from azure.mgmt.compute.v2021_07_01.models import VirtualMachine
-from azure.mgmt.resource.resources.v2021_04_01.models import TagsPatchResource, TagsPatchOperation
+from azure.mgmt.compute.models import VirtualMachine
+from azure.mgmt.resource.resources.models import TagsPatchResource, TagsPatchOperation
 import google.api_core.exceptions
 from google.cloud import compute_v1
 from mypy_boto3_ec2 import EC2Client
@@ -70,6 +71,7 @@ from sdcm.utils.azure_region import AzureOsState, AzureRegion, region_name_to_lo
 from sdcm.utils.context_managers import environment
 from sdcm.test_config import TestConfig
 from sdcm.node_exporter_setup import NodeExporterSetup
+from sdcm.cluster_docker import AIO_MAX_NR_RECOMMENDED_VALUE
 
 if TYPE_CHECKING:
 
@@ -138,7 +140,7 @@ class SctRunnerInfo:
 
 class SctRunner(ABC):
     """Provision and configure the SCT runner."""
-    VERSION = "1.12"  # Version of the Image
+    VERSION = "1.15"  # Version of the Image
     NODE_TYPE = "sct-runner"
     RUNNER_NAME = "SCT-Runner"
     LOGIN_USER = "ubuntu"
@@ -193,15 +195,13 @@ class SctRunner(ABC):
                                                   key_file=self._ssh_pkey_file.name, connect_timeout=connect_timeout)
 
     def install_prereqs(self, public_ip: str, connect_timeout: Optional[int] = None) -> None:
-        from sdcm.cluster_docker import AIO_MAX_NR_RECOMMENDED_VALUE
-
         LOGGER.info("Connecting instance...")
         remoter = self.get_remoter(host=public_ip, connect_timeout=connect_timeout)
 
         LOGGER.info("Installing required packages...")
         login_user = self.LOGIN_USER
         public_key = self.key_pair.public_key.decode()
-        result = remoter.sudo(shell_script_cmd(quote="'", cmd=f"""\
+        result = remoter.sudo(shell_script_cmd(quote="'", cmd=dedent(f"""\
             # Make sure that cloud-init finished running.
             until [ -f /var/lib/cloud/instance/boot-finished ]; do sleep 1; done
 
@@ -225,7 +225,7 @@ class SctRunner(ABC):
 
             apt-get -qq clean
             apt-get -qq update
-            apt-get -qq install --no-install-recommends python3-pip htop screen tree systemd-coredump
+            apt-get -qq install --no-install-recommends python3-pip htop screen tree systemd-coredump rng-tools
             pip3 install awscli
 
             # disable unattended-upgrades
@@ -238,6 +238,10 @@ class SctRunner(ABC):
             add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
             apt-get -qq install --no-install-recommends docker-ce docker-ce-cli containerd.io
             usermod -aG docker {login_user}
+
+            # Configure Docker to use Google Container Registry mirrors.
+            mkdir -p /etc/docker
+            printf "%s\n" "{{" "  \\"registry-mirrors\\": [" "    \\"https://mirror.gcr.io\\"" "  ]" "}}" > /etc/docker/daemon.json
 
             # Install kubectl.
             curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -255,7 +259,7 @@ class SctRunner(ABC):
 
             # Jenkins pipelines run /bin/sh for some reason.
             ln -sf /bin/bash /bin/sh
-        """), ignore_status=True)
+        """)), ignore_status=True)
 
         node_exporter_setup = NodeExporterSetup()
         node_exporter_setup.install(remoter=remoter)
@@ -356,6 +360,7 @@ class SctRunner(ABC):
                 instance_type=self.IMAGE_BUILDER_INSTANCE_TYPE,
                 base_image=self.BASE_IMAGE,
                 tags={
+                    "RunByUser": "qa",
                     "keep": "1",
                     "keep_action": "terminate",
                     "Version": self.VERSION,
@@ -1392,5 +1397,5 @@ def clean_sct_runners(test_status: str,
 
 
 class AwsFipsSctRunner(AwsSctRunner):
-    VERSION = f"{SctRunner.VERSION}-fips"
+    VERSION = f"{SctRunner.VERSION}-v1-fips"
     BASE_IMAGE = 'resolve:ssm:/aws/service/marketplace/prod-k6fgbnayirmrc/latest'
