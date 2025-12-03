@@ -1291,6 +1291,13 @@ class SCTConfiguration(dict):
                     be provided by the test suite infrastructure.
                     multiple commands can passed as a list"""),
 
+        dict(name="stress_cmd_read_disk", env="SCT_STRESS_CMD_READ_DISK",
+             type=str_or_list, k8s_multitenancy_supported=True,
+             help="""cassandra-stress commands.
+                    You can specify everything but the -node parameter, which is going to
+                    be provided by the test suite infrastructure.
+                    multiple commands can passed as a list"""),
+
         dict(name="stress_cmd_cache_warmup", env="SCT_STRESS_CMD_CACHE_WARM_UP",
              type=str_or_list, k8s_multitenancy_supported=True,
              help="""cassandra-stress commands for warm-up before read workload.
@@ -2013,7 +2020,7 @@ class SCTConfiguration(dict):
         # this list is used for variouse checks against stress commands, such as:
         # 1. Check if all c-s profile files existing that are referred in the commands
         # 2. Check what stress tools test is needed when loader is prepared
-        'gemini_cmd', 'stress_cmd', 'stress_read_cmd', 'stress_cmd_w', 'stress_cmd_r', 'stress_cmd_m',
+        'gemini_cmd', 'stress_cmd', 'stress_read_cmd', 'stress_cmd_w', 'stress_cmd_r', 'stress_cmd_m', 'stress_cmd_read_disk',
         'prepare_write_cmd', 'stress_cmd_no_mv', 'stress_cmd_no_mv_profile',
         'prepare_stress_cmd', 'stress_cmd_1', 'stress_cmd_complex_prepare', 'prepare_write_stress',
         'stress_cmd_read_10m', 'stress_cmd_read_cl_one', 'stress_cmd_read_80m',
@@ -2193,7 +2200,7 @@ class SCTConfiguration(dict):
                             ami = get_scylla_ami_versions(version=oracle_scylla_version,
                                                           region_name=region, arch=aws_arch)[0]
                     except Exception as ex:  # noqa: BLE001
-                        raise ValueError(f"AMIs for oracle_scylla_version='{scylla_version}' not found in {region} "
+                        raise ValueError(f"AMIs for oracle_scylla_version='{oracle_scylla_version}' not found in {region} "
                                          f"arch={aws_arch}") from ex
 
                     self.log.debug("Found AMI %s for oracle_scylla_version='%s' in %s",

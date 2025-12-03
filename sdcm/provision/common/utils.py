@@ -112,7 +112,7 @@ def configure_vector_target_script(host: str, port: int) -> str:
                 type: filter
                 condition: |
                     message = to_string(.message) ?? \\"\\"
-                    !(match(message, r'^WARNING.*\\[shard.*\\]') || match(message, r'^!.*WARNING.*\\[shard.*\\]'))
+                    !(match(message, to_regex!(\\"^WARNING.*[shard.*]\\")) || match(message, to_regex!(\\"^!.*WARNING.*[shard.*]\\")))
 
         sinks:
             sct-runner:
