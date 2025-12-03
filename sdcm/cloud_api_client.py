@@ -314,8 +314,8 @@ class ScyllaCloudAPIClient:
             maintenanceWindows=maintenance_windows,
             scaling=scaling,
             promProxy=prom_proxy,
-            vectorSearch=vector_search
-            tablets=tablets,
+            vectorSearch=vector_search,
+            tablets=tablets
         )
         return self._parse_response_data(response)
 
