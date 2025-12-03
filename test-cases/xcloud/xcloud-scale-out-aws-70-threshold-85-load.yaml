@@ -17,7 +17,7 @@ scaling_config: {
     "Mode": "xcloud",
     "Policies": {
       "Storage": {
-        "Min": 4393,
+        "Min": 3295,
         "TargetUtilization": 0.7
       },
       "VCPU": {
