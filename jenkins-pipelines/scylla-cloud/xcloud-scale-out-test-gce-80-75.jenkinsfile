@@ -10,5 +10,5 @@ longevityPipeline(
     test_name: 'xcloud_test.XcloudScaleOutTest.test_xcloud_scale_out',
     test_config: 'test-cases/xcloud/xcloud-scale-out-gce-80-threshold-75-load.yaml',
     provision_type: 'on_demand',
-    availability_zone: 'a'
+    availability_zone: 'b'
 )
