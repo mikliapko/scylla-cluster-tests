@@ -2056,7 +2056,8 @@ class SCTConfiguration(dict):
         backend_config_files = [sct_abs_path('defaults/test_default.yaml')]
         if backend:
             if backend == 'xcloud':
-                backend_config_files += self.defaults_config_files[env.get('xcloud_provider', 'aws')]
+                assert 'xcloud_provider' in env, "xcloud_provider must be set for xcloud backend"
+                backend_config_files += self.defaults_config_files[env.get('xcloud_provider')]
             backend_config_files += self.defaults_config_files[str(backend)]
         self.multi_region_params = self.per_provider_multi_region_params.get(str(backend), [])
 
@@ -2683,7 +2684,6 @@ class SCTConfiguration(dict):
             self._validate_docker_backend_parameters()
         if backend == 'xcloud':
             self._validate_cloud_backend_parameters()
-
         self._verify_data_volume_configuration(backend)
 
         if self.get('n_db_nodes'):
