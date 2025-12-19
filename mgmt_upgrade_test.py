@@ -98,6 +98,7 @@ class ManagerUpgradeTest(ManagerTestFunctionsMixIn, ClusterTester):
                 cron=create_cron_list_from_timedelta(minutes=2),
                 location_list=self.locations,
                 keyspace_list=["keyspace1"],
+                method=self.backup_method,
             )
             backup_task_current_details = wait_until_task_finishes_return_details(backup_task)
             backup_task_snapshot = backup_task.get_snapshot_tag()
@@ -110,7 +111,10 @@ class ManagerUpgradeTest(ManagerTestFunctionsMixIn, ClusterTester):
             self.write_multiple_rows(table_name="cf2", key_range=(1, 11))
 
             rerunning_backup_task = mgr_cluster.create_backup_task(
-                location_list=self.locations, keyspace_list=["ks1"], retention=2
+                location_list=self.locations,
+                keyspace_list=["ks1"],
+                retention=2,
+                method=self.backup_method,
             )
             rerunning_backup_task.wait_and_get_final_status(timeout=300, step=20)
             assert rerunning_backup_task.status == TaskStatus.DONE, (
@@ -125,6 +129,7 @@ class ManagerUpgradeTest(ManagerTestFunctionsMixIn, ClusterTester):
                 location_list=self.locations,
                 keyspace_list=["keyspace2"],
                 legacy_args=legacy_args,
+                method=self.backup_method,
             )
             pausable_backup_task.wait_for_status(list_status=[TaskStatus.RUNNING], timeout=180, step=2)
             pausable_backup_task.stop()
