@@ -22,22 +22,19 @@ class XcloudScaleOutTest(LongevityTest):
 
     # The expected max time for scale out successful completion is 40 minutes
     @retrying(n=20, sleep_time=60*5, allowed_exceptions=(Retry, AssertionError))
-    def verify_cluster_scaled_out(self, initial_nodes_ips: list):
+    def verify_cluster_scaled_out(self, initial_node_ids: list):
         self.log.info("Get list of nodes after cluster is populated with data")
-        updated_nodes = self.db_cluster.get_nodetool_status(dc_aware=False)
-        updated_nodes_ips = list(updated_nodes.keys())
-
-        self.log.info(f"Updated nodes: {updated_nodes}")
+        updated_nodes_ids = self.db_cluster.get_cluster_nodes()
 
         self.log.info(f"Verify the number of nodes after scale out is 3 and all the old nodes were replaced")
-        assert set(initial_nodes_ips).isdisjoint(set(updated_nodes_ips)), "Nodes were not replaced after scale out"
-        assert len(updated_nodes) == 3, "Number of nodes after scaling is not 3"
+        assert set(initial_node_ids).isdisjoint(set(updated_nodes_ids)), "Nodes were not replaced after scale out"
+        assert len(updated_nodes_ids) == 3, "Number of nodes after scaling is not 3"
 
     def test_xcloud_scale_out(self):
         """
         Test Xcloud cluster automatic scale out triggering upon reaching specified threshold
         """
-        initial_nodes_ips = list(self.db_cluster.get_nodetool_status(dc_aware=False).keys())
+        initial_node_ids = self.db_cluster.get_cluster_nodes()
         stress_queue = []
         stress_cmd = self.params.get('stress_cmd')
         keyspace_num = 1
@@ -46,4 +43,4 @@ class XcloudScaleOutTest(LongevityTest):
         for stress in stress_queue:
             self.verify_stress_thread(stress)
 
-        self.verify_cluster_scaled_out(initial_nodes_ips)
+        self.verify_cluster_scaled_out(initial_node_ids)

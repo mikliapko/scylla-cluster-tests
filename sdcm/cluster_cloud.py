@@ -1174,3 +1174,13 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
     @property
     def scylla_manager_node(self) -> cluster.BaseNode:
         return self.manager_node
+
+    def get_cluster_nodes(self) -> list[int]:
+        cluster_nodes = self._api_client.get_cluster_details(
+            account_id=self._account_id,
+            cluster_id=self._cluster_id,
+            enriched=True,
+        )["nodes"]
+
+        cluster_node_ids = [node["id"] for node in cluster_nodes]
+        return cluster_node_ids
