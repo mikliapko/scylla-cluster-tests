@@ -8,7 +8,7 @@ n_monitor_nodes: 1
 
 user_prefix: 'xcloud-scale-out-aws-80-75'
 instance_provision: 'on_demand'
-scylla_version: '2025.4.0~rc7-0.20251215.344f64870303'
+scylla_version: '2025.4.0'
 
 scaling_config: {
     "InstanceFamilies": [
@@ -27,4 +27,5 @@ scaling_config: {
 }
 
 n_vector_store_nodes: 1
+instance_type_db: 'i4i.xlarge'
 instance_type_vector_store: 't4g.medium'

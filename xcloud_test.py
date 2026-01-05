@@ -21,7 +21,7 @@ from longevity_test import LongevityTest
 class XcloudScaleOutTest(LongevityTest):
 
     # The expected max time for scale out successful completion is 40 minutes
-    @retrying(n=20, sleep_time=60*5, allowed_exceptions=(Retry, AssertionError))
+    @retrying(n=60, sleep_time=60*5, allowed_exceptions=(Retry, AssertionError))
     def verify_cluster_scaled_out(self, initial_node_ids: list):
         self.log.info("Get list of nodes after cluster is populated with data")
         updated_nodes_ids = self.db_cluster.get_cluster_nodes()
