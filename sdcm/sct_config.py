@@ -3221,7 +3221,7 @@ class SCTConfiguration(dict):
         ]
         # TODO: the version is not listed in Scylla Cloud API but is used in Prod exclusively for Vector Search beta
         # TODO: must be removed after Scylla 2025.4 is generally available in Scylla Cloud
-        supported_versions.append("2025.4.0~rc0-0.20251001.6969918d3151")
+        supported_versions.append("2025.4.0~rc7-0.20251215.344f64870303")
         if (selected_version := self.get('scylla_version')) not in supported_versions:
             raise ValueError(f"Selected Scylla version '{selected_version}' is not supported by cloud backend.\n"
                              f"Currently supported versions: {', '.join(supported_versions)}")
