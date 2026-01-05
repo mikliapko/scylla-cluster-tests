@@ -1182,5 +1182,5 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
             enriched=True,
         )["nodes"]
 
-        cluster_node_ids = [node["id"] for node in cluster_nodes]
+        cluster_node_ids = [node["id"] for node in cluster_nodes if node.get("nodeType") != "vector-search"]
         return cluster_node_ids
