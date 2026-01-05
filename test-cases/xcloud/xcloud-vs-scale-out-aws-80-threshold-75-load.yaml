@@ -1,0 +1,30 @@
+test_duration: 180
+stress_cmd: ["cassandra-stress write n=42500000 cl=QUORUM -schema 'replication(strategy=NetworkTopologyStrategy,replication_factor=3)' -mode cql3 native -rate threads=100 -col 'n=FIXED(10) size=FIXED(900)' -pop seq=1..42500000 -log interval=5"]
+
+xcloud_replication_factor: 3
+n_loaders: 1
+
+n_monitor_nodes: 1
+
+user_prefix: 'xcloud-scale-out-aws-80-75'
+instance_provision: 'on_demand'
+scylla_version: '2025.4.0~rc7-0.20251215.344f64870303'
+
+scaling_config: {
+    "InstanceFamilies": [
+      "i4i"
+    ],
+    "Mode": "xcloud",
+    "Policies": {
+      "Storage": {
+        "Min": 0,
+        "TargetUtilization": 0.8
+      },
+      "VCPU": {
+        "Min": 0
+      }
+    }
+}
+
+n_vector_store_nodes: 1
+instance_type_vector_store: 't4g.medium'
