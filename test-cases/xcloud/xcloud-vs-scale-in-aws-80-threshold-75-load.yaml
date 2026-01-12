@@ -6,7 +6,7 @@ n_loaders: 2
 
 n_monitor_nodes: 1
 
-user_prefix: 'xcloud-vs-scale-in-aws-80-75'
+user_prefix: 'xcloud-vs'
 instance_provision: 'on_demand'
 scylla_version: '2025.4.0'
 
