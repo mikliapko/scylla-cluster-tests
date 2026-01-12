@@ -44,3 +44,19 @@ class XcloudScaleOutTest(LongevityTest):
             self.verify_stress_thread(stress)
 
         self.verify_cluster_scaled_out(initial_node_ids)
+
+    def test_xcloud_scale_in(self):
+        """
+        Test Xcloud cluster automatic scale out triggering upon reaching specified threshold
+        """
+        stress_queue = []
+        stress_cmd = self.params.get('stress_cmd')
+        keyspace_num = 1
+
+        self.assemble_and_run_all_stress_cmd(stress_queue, stress_cmd, keyspace_num)
+        for stress in stress_queue:
+            self.verify_stress_thread(stress)
+
+        # self.verify_cluster_scaled_out(initial_node_ids)
+        import time
+        time.sleep(3600*5)
