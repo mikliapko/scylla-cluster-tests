@@ -11,9 +11,7 @@ instance_provision: 'on_demand'
 scylla_version: '2025.4.0'
 
 scaling_config: {
-    "InstanceFamilies": [
-      "i8g.large"
-    ],
+    "InstanceTypeIDs": [182],
     "Mode": "xcloud",
     "Policies": {
       "Storage": {
