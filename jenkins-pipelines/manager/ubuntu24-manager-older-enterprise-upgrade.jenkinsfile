@@ -9,7 +9,7 @@ managerPipeline(
 
     scylla_version: '2024.1',
 
-    manager_version: '3.4',
+    manager_version: '3.6',
     target_manager_version: 'master_latest',
 
     test_name: 'mgmt_upgrade_test.ManagerUpgradeTest.test_upgrade',
