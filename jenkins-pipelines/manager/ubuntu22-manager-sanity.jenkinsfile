@@ -8,6 +8,7 @@ managerPipeline(
     region: 'us-east-1',
     test_name: 'mgmt_cli_test.ManagerSanityTests.test_manager_sanity',
     test_config: 'test-cases/manager/manager-regression-singleDC-set-distro.yaml',
+    extra_environment_variables: 'SCT_KMS_KEY_ROTATION_INTERVAL=120',  // TODO: remove after 'enable_kms_key_rotation' config option support for AWS cluster is implemented
 
     scylla_version: '2025.3',
 
