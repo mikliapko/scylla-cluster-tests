@@ -626,7 +626,31 @@ class ManagerHealthCheckTests(ManagerTestFunctionsMixIn):
 
 
 class ManagerEncryptionTests(ManagerTestFunctionsMixIn):
+    def tearDown(self):
+        """The test changes the client encryption state of the cluster, and in order to not affect other tests,
+        it needs to change it back to the default state at the end of the test.
+        """
+        default_encryption_state = self.params.get("client_encrypt")
+        current_encryption_state = self.db_cluster.nodes[0].is_client_encrypt
+        if default_encryption_state != current_encryption_state:
+            if default_encryption_state:
+                self._enable_client_encryption()
+            else:
+                self._disable_client_encryption()
+        else:
+            self.log.debug("Client encryption state matches the default; no changes needed")
+
+        super().tearDown()
+
+    def _enable_client_encryption(self) -> None:
+        self.log.debug("Enabling client encryption...")
+        for node in self.db_cluster.nodes:
+            with node.remote_scylla_yaml() as scylla_yml:
+                scylla_yml.client_encryption_options.enabled = True
+            node.restart_scylla()
+
     def _disable_client_encryption(self) -> None:
+        self.log.debug("Disabling client encryption...")
         for node in self.db_cluster.nodes:
             with node.remote_scylla_yaml() as scylla_yml:
                 scylla_yml.client_encryption_options.enabled = False
