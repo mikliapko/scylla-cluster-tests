@@ -9,9 +9,8 @@ instance_type_loader: 'c6i.large'
 rack_aware_loader: true
 region_name: 'us-east-1 us-west-2'
 n_db_nodes: '3 3'
-availability_zone: 'a,b,c'
 n_loaders: 1
-simulated_racks: 0
+simulated_racks: 3
 
 client_encrypt: true
 
