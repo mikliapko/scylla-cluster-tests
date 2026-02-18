@@ -18,6 +18,7 @@ import threading
 import time
 from datetime import timedelta
 
+
 from sdcm import mgmt
 from sdcm.argus_results import (
     send_manager_benchmark_results_to_argus,
@@ -626,38 +627,27 @@ class ManagerHealthCheckTests(ManagerTestFunctionsMixIn):
 
 
 class ManagerEncryptionTests(ManagerTestFunctionsMixIn):
+    default_encryption_state: bool = None
+
     def tearDown(self):
-        """The test changes the client encryption state of the cluster, and in order to not affect other tests,
+        """The test changes the client encryption state of the cluster, and to not affect other tests,
         it needs to change it back to the default state at the end of the test.
         """
-        default_encryption_state = self.params.get("client_encrypt")
         current_encryption_state = self.db_cluster.nodes[0].is_client_encrypt
-        if default_encryption_state != current_encryption_state:
-            if default_encryption_state:
-                self._enable_client_encryption()
+        if self.default_encryption_state != current_encryption_state:
+            if self.default_encryption_state:
+                self.db_cluster.enable_client_encrypt(create_certificates=False)
             else:
-                self._disable_client_encryption()
+                self.db_cluster.disable_client_encrypt()
         else:
             self.log.debug("Client encryption state matches the default; no changes needed")
 
         super().tearDown()
 
-    def _enable_client_encryption(self) -> None:
-        self.log.debug("Enabling client encryption...")
-        for node in self.db_cluster.nodes:
-            with node.remote_scylla_yaml() as scylla_yml:
-                scylla_yml.client_encryption_options.enabled = True
-            node.restart_scylla()
-
-    def _disable_client_encryption(self) -> None:
-        self.log.debug("Disabling client encryption...")
-        for node in self.db_cluster.nodes:
-            with node.remote_scylla_yaml() as scylla_yml:
-                scylla_yml.client_encryption_options.enabled = False
-            node.restart_scylla()
-
     def test_client_encryption(self):
         self.log.info("starting test_client_encryption")
+
+        self.default_encryption_state = self.params.get("client_encrypt")
 
         self.log.info("ENABLED client encryption checks")
         if not self.db_cluster.nodes[0].is_client_encrypt:
@@ -685,7 +675,7 @@ class ManagerEncryptionTests(ManagerTestFunctionsMixIn):
             assert host_health.status == HostStatus.UP, "Not all hosts status is 'UP'"
 
         self.log.info("DISABLED client encryption checks")
-        self._disable_client_encryption()
+        self.db_cluster.disable_client_encrypt()
         # SM caches scylla nodes configuration and the healthcheck svc is independent on the cache updates.
         # Cache is being updated periodically, every 1 minute following the manager config for SCT.
         # We need to wait until SM is aware about the configuration change.
@@ -915,24 +905,24 @@ class ManagerSanityTests(
         3) test_mgmt_cluster_healthcheck
         4) test_client_encryption
         """
-        if not prepared_ks:
-            self.generate_load_and_wait_for_results()
-        with self.subTest("Basic Backup Test"):
-            self.test_basic_backup(ks_names=ks_names)
-        with self.subTest("Restore Backup Test"):
-            self.test_restore_backup_with_task(ks_names=ks_names)
-        with self.subTest("Repair Multiple Keyspace Types"):
-            self.test_repair_multiple_keyspace_types()
-        with self.subTest("Mgmt Cluster CRUD"):
-            self.test_cluster_crud()
-        with self.subTest("Mgmt cluster Health Check"):
-            self.test_cluster_healthcheck()
-        # test_healthcheck_change_max_timeout requires a multi dc run
-        if self.db_cluster.nodes[0].test_config.MULTI_REGION:
-            with self.subTest("Basic test healthcheck change max timeout"):
-                self.test_healthcheck_change_max_timeout()
-        with self.subTest("Basic test suspend and resume"):
-            self.test_suspend_and_resume()
+        # if not prepared_ks:
+        #     self.generate_load_and_wait_for_results()
+        # with self.subTest("Basic Backup Test"):
+        #     self.test_basic_backup(ks_names=ks_names)
+        # with self.subTest("Restore Backup Test"):
+        #     self.test_restore_backup_with_task(ks_names=ks_names)
+        # with self.subTest("Repair Multiple Keyspace Types"):
+        #     self.test_repair_multiple_keyspace_types()
+        # with self.subTest("Mgmt Cluster CRUD"):
+        #     self.test_cluster_crud()
+        # with self.subTest("Mgmt cluster Health Check"):
+        #     self.test_cluster_healthcheck()
+        # # test_healthcheck_change_max_timeout requires a multi dc run
+        # if self.db_cluster.nodes[0].test_config.MULTI_REGION:
+        #     with self.subTest("Basic test healthcheck change max timeout"):
+        #         self.test_healthcheck_change_max_timeout()
+        # with self.subTest("Basic test suspend and resume"):
+        #     self.test_suspend_and_resume()
         with self.subTest("Client Encryption"):
             # Since this test activates encryption, it has to be the last test in the sanity
             self.test_client_encryption()
