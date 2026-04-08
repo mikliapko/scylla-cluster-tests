@@ -990,6 +990,9 @@ class ManagerSanityTests(
         3) test_mgmt_cluster_healthcheck
         4) test_client_encryption
         """
+        self.log.info("Sleeping 1800 seconds to configure NFS share")
+        time.sleep(1800)
+
         if not prepared_ks:
             self.generate_load_and_wait_for_results()
         with self.subTest("Basic Backup Test"):

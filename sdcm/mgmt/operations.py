@@ -723,14 +723,15 @@ class ManagerTestFunctionsMixIn(
 
     @cached_property
     def locations(self) -> list[str]:
-        backend = self.params.get("backup_bucket_backend")
-        region = next(iter(self.params.region_names), "")
-        bucket_locations = self.params.get("backup_bucket_location")
-
-        buckets = [bucket.format(region=region) for bucket in bucket_locations]
-
-        # FIXME: Make it works with multiple locations or file a bug for scylla-manager.
-        return [f"{backend}:{location}" for location in buckets[:1]]
+        # backend = self.params.get("backup_bucket_backend")
+        # region = next(iter(self.params.region_names), "")
+        # bucket_locations = self.params.get("backup_bucket_location")
+        #
+        # buckets = [bucket.format(region=region) for bucket in bucket_locations]
+        #
+        # # FIXME: Make it works with multiple locations or file a bug for scylla-manager.
+        # return [f"{backend}:{location}" for location in buckets[:1]]
+        return ["localstorage:nfs-backup"]
 
     @cached_property
     def backup_method(self) -> ObjectStorageUploadMode | None:
@@ -770,15 +771,16 @@ class ManagerTestFunctionsMixIn(
                 for table_name in tables:
                     self.log.info(f"running truncate on {ks}.{table_name}")
                     self.db_cluster.nodes[0].run_cqlsh(f"TRUNCATE {ks}.{table_name}")
-        if restore_data_with_task:
-            self.restore_backup_with_task(
-                mgr_cluster=mgr_cluster, snapshot_tag=backup_task.get_snapshot_tag(), timeout=timeout, restore_data=True
-            )
-        else:
-            snapshot_tag = backup_task.get_snapshot_tag()
-            self.restore_backup_without_manager(
-                mgr_cluster=mgr_cluster, snapshot_tag=snapshot_tag, ks_tables_list=ks_tables_map
-            )
+        # if restore_data_with_task:
+        print(restore_data_with_task)
+        self.restore_backup_with_task(
+            mgr_cluster=mgr_cluster, snapshot_tag=backup_task.get_snapshot_tag(), timeout=timeout, restore_data=True
+        )
+        # else:
+        #     snapshot_tag = backup_task.get_snapshot_tag()
+        #     self.restore_backup_without_manager(
+        #         mgr_cluster=mgr_cluster, snapshot_tag=snapshot_tag, ks_tables_list=ks_tables_map
+        #     )
 
     def verify_alternator_backup_success(self, mgr_cluster, backup_task, delete_tables: list = None, timeout=None):
         for table_name in delete_tables:
