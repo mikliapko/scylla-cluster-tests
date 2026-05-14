@@ -55,6 +55,7 @@ from sdcm.mgmt.operations import ManagerTestFunctionsMixIn, SnapshotData
 from sdcm.sct_events.system import InfoEvent
 from sdcm.sct_events.group_common_events import (
     ignore_no_space_errors,
+    ignore_snapshot_listing_oversized_allocation,
     ignore_stream_mutation_fragments_errors,
     ignore_aborted_snapshot_upload_storage_io_errors,
 )
@@ -252,8 +253,10 @@ class ManagerBackupTests(ManagerRestoreTests):
         for node in self.db_cluster.nodes:
             node.run_nodetool("compact")
 
-        backup_task.start(continue_task=False)
-        backup_task.wait_and_get_final_status(step=10)
+        with ignore_snapshot_listing_oversized_allocation():
+            backup_task.start(continue_task=False)
+            backup_task.wait_and_get_final_status(step=10)
+
         snapshot_file_list_post_purge = self.get_all_snapshot_files(cluster_id=mgr_cluster.id)
         orphan_files_post_rerun = snapshot_file_list_post_purge.intersection(orphan_files_pre_rerun)
         assert not orphan_files_post_rerun, "orphan files were not deleted!"
