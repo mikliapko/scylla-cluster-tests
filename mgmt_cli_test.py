@@ -422,8 +422,8 @@ class ManagerBackupTests(ManagerRestoreTests):
 
 
 class ManagerRepairTests(ManagerTestFunctionsMixIn):
-    LOCALSTRATEGY_KEYSPACE_NAME = "localstrategy_keyspace"
-    NETWORKSTRATEGY_KEYSPACE_NAME = "networkstrategy_keyspace"
+    NON_REPLICATED_KEYSPACE_NAME = "non_replicated_keyspace"
+    REPLICATED_KEYSPACE_NAME = "replicated_keyspace"
 
     def _test_intensity_and_parallel(self, fault_multiple_nodes):
         keyspace_to_be_repaired = "keyspace2"
@@ -504,9 +504,9 @@ class ManagerRepairTests(ManagerTestFunctionsMixIn):
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
         rf = self.get_rf_based_on_nodes_number() if self.db_node.test_config.MULTI_REGION else 3
-        self.create_keyspace_and_basic_table(self.NETWORKSTRATEGY_KEYSPACE_NAME, replication_factor=rf)
+        self.create_keyspace_and_basic_table(self.REPLICATED_KEYSPACE_NAME, replication_factor=rf)
 
-        self.create_keyspace_and_basic_table(self.LOCALSTRATEGY_KEYSPACE_NAME, replication_factor=0)
+        self.create_keyspace_and_basic_table(self.NON_REPLICATED_KEYSPACE_NAME, replication_factor=1)
         repair_task = mgr_cluster.create_repair_task()
         task_final_status = repair_task.wait_and_get_final_status(timeout=7200)
         assert task_final_status == TaskStatus.DONE, "Task: {} final status is: {}.".format(
@@ -515,7 +515,7 @@ class ManagerRepairTests(ManagerTestFunctionsMixIn):
         self.log.info("Task: {} is done.".format(repair_task.id))
         self.log.debug("sctool version is : {}".format(manager_tool.sctool.version))
 
-        expected_keyspaces_to_be_repaired = ["system_distributed", self.NETWORKSTRATEGY_KEYSPACE_NAME]
+        expected_keyspaces_to_be_repaired = ["system_distributed", self.REPLICATED_KEYSPACE_NAME]
         if not self.db_cluster.nodes[0].raft.is_consistent_topology_changes_enabled:
             expected_keyspaces_to_be_repaired.append("system_auth")
         self.log.debug("Keyspaces expected to be repaired: {}".format(expected_keyspaces_to_be_repaired))
@@ -531,9 +531,9 @@ class ManagerRepairTests(ManagerTestFunctionsMixIn):
                 keyspace_name, keyspace_repair_percentage
             )
 
-        localstrategy_keyspace_percentage = per_keyspace_progress.get(self.LOCALSTRATEGY_KEYSPACE_NAME, None)
-        assert localstrategy_keyspace_percentage is None, (
-            "The keyspace with the replication strategy of localstrategy was included in repair, when it shouldn't"
+        non_replicated_keyspace_percentage = per_keyspace_progress.get(self.NON_REPLICATED_KEYSPACE_NAME, None)
+        assert non_replicated_keyspace_percentage is None, (
+            "The keyspace with rf=1 (no replicas to repair) was included in repair, when it shouldn't"
         )
         self.log.info("the sctool repair command was completed successfully")
 
