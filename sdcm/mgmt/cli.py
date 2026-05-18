@@ -720,12 +720,14 @@ class ManagerCluster(ScyllaManagerBase):
         num_retries=None,
         rate_limit_list=None,
         retention=None,
+        retention_days=None,
         show_tables=None,
         snapshot_parallel_list=None,
         start_date=None,
         upload_parallel_list=None,
         transfers=None,
         method=None,
+        retention_lock_mode=None,
     ):
         cmd = "backup -c {}".format(self.id)
 
@@ -747,6 +749,8 @@ class ManagerCluster(ScyllaManagerBase):
             cmd += " --rate-limit {} ".format(rate_limit_string)
         if retention is not None:
             cmd += " --retention {} ".format(retention)
+        if retention_days is not None:
+            cmd += " --retention-days {} ".format(retention_days)
         if show_tables is not None:
             cmd += " --show-tables {} ".format(show_tables)
         if snapshot_parallel_list is not None:
@@ -763,6 +767,8 @@ class ManagerCluster(ScyllaManagerBase):
             cmd += " --upload-parallel {} ".format(upload_parallel_string)
         if method is not None:
             cmd += " --method {} ".format(method.value)
+        if retention_lock_mode is not None:
+            cmd += " --retention-lock-mode {} ".format(retention_lock_mode)
 
         res = self.sctool.run(cmd=cmd, parse_table_res=False)
 
