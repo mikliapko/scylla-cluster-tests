@@ -16,6 +16,7 @@ from sdcm.mgmt.cli import ScyllaManagerTool
 from sdcm.mgmt.common import ObjectStorageUploadMode
 from sdcm import mgmt
 from sdcm.exceptions import FilesNotCorrupted
+from sdcm.keystore import KeyStore
 from sdcm.remote import shell_script_cmd, LOCALRUNNER
 from sdcm.sct_events.system import InfoEvent
 from sdcm.test_config import TestConfig
@@ -23,7 +24,8 @@ from sdcm.tester import ClusterTester
 from sdcm.utils.azure_utils import AzureService
 from sdcm.utils.cluster_tools import flush_nodes, major_compaction_nodes, clear_snapshot_nodes
 from sdcm.utils.compaction_ops import CompactionOps
-from sdcm.utils.gce_utils import get_gce_storage_client
+from sdcm.utils.gce_region import GceRegion
+from sdcm.utils.gce_utils import create_gce_storage_bucket, get_gce_storage_client, gce_override_object_retention
 from sdcm.utils.loader_utils import LoaderUtilsMixin
 from sdcm.utils.time_utils import ExecutionTimer
 from sdcm.utils.version_utils import ComparableScyllaVersion
@@ -223,6 +225,30 @@ class BucketOperations(ClusterTester):
         else:
             raise ValueError(f"Unsupported cluster backend - {cluster_backend}, should be either aws or gce")
 
+    @staticmethod
+    def create_worm_bucket(region: str, bucket_name: str) -> None:
+        bucket = create_gce_storage_bucket(name=bucket_name, region=region, object_lock_enabled=True)
+
+        # Grant the access to this bucket for sct-manager-backup service account
+        project_id = KeyStore().get_gcp_credentials()["project_id"]
+        sa_email = f"{GceRegion.SCT_BACKUP_SERVICE_ACCOUNT}@{project_id}.iam.gserviceaccount.com"
+
+        policy = bucket.get_iam_policy(requested_policy_version=3)
+        policy.bindings.append({"role": "roles/storage.objectAdmin", "members": {f"serviceAccount:{sa_email}"}})
+        bucket.set_iam_policy(policy)
+
+    @staticmethod
+    def destroy_worm_bucket(bucket_name: str) -> None:
+        gce_override_object_retention(bucket_name=bucket_name, path="")
+
+        storage_client, _ = get_gce_storage_client()
+        bucket = storage_client.bucket(bucket_name)
+        blobs = list(storage_client.list_blobs(bucket_name))
+        for blob in blobs:
+            blob.delete()
+
+        bucket.delete()
+
 
 @dataclass
 class SnapshotData:
@@ -326,9 +352,9 @@ class SnapshotOperations(ClusterTester):
             file_set.add(listing_object.name)
         return file_set
 
-    def get_all_snapshot_files(self, cluster_id):
+    def get_all_snapshot_files(self, cluster_id, bucket_location=None):
         region_name = next(iter(self.params.region_names), "")
-        bucket_name = self.params.get("backup_bucket_location")[0].format(region=region_name)
+        bucket_name = bucket_location or self.params.get("backup_bucket_location")[0].format(region=region_name)
         if self.params.get("backup_bucket_backend") == "s3":
             return self._get_all_snapshot_files_s3(
                 cluster_id=cluster_id, bucket_name=bucket_name, region_name=region_name
