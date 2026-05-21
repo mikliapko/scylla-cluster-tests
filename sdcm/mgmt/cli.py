@@ -728,6 +728,7 @@ class ManagerCluster(ScyllaManagerBase):
         transfers=None,
         method=None,
         retention_lock_mode=None,
+        override_retention_lock=None,
     ):
         cmd = "backup -c {}".format(self.id)
 
@@ -769,6 +770,8 @@ class ManagerCluster(ScyllaManagerBase):
             cmd += " --method {} ".format(method.value)
         if retention_lock_mode is not None:
             cmd += " --retention-lock-mode {} ".format(retention_lock_mode)
+        if override_retention_lock:
+            cmd += " --override-retention-lock"
 
         res = self.sctool.run(cmd=cmd, parse_table_res=False)
 
