@@ -728,6 +728,7 @@ class ManagerCluster(ScyllaManagerBase):
         upload_parallel_list=None,
         transfers=None,
         method=None,
+        override_retention_lock=None,
     ):
         cmd = "backup -c {}".format(self.id)
 
@@ -769,6 +770,8 @@ class ManagerCluster(ScyllaManagerBase):
             cmd += " --upload-parallel {} ".format(upload_parallel_string)
         if method is not None:
             cmd += " --method {} ".format(method.value)
+        if override_retention_lock:
+            cmd += " --override-retention-lock"
 
         res = self.sctool.run(cmd=cmd, parse_table_res=False)
 
