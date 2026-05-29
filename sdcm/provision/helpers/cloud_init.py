@@ -23,8 +23,15 @@ from sdcm.utils.decorators import retrying
 LOGGER = logging.getLogger(__name__)
 
 
+CLOUD_INIT_OUTPUT_LOG = "/var/log/cloud-init-output.log"
+
+
 class CloudInitError(Exception):
     pass
+
+
+class CloudInitPermanentError(Exception):
+    """Raised when cloud-init has already finished with a permanent error. No point retrying."""
 
 
 @retrying(n=20, sleep_time=10, allowed_exceptions=(CloudInitError,), message="waiting for cloud-init to complete")
@@ -49,6 +56,13 @@ def wait_cloud_init_completes(remoter: RemoteCmdRunnerBase, instance: VmInstance
         if status["status"] != "done" or status["errors"] or result.return_code == 1:
             LOGGER.error("Some errors during cloud-init %s", status)
             errors_found = True
+            # If cloud-init is already permanently done with an error, no point retrying
+            if status.get("extended_status", "").endswith("- done"):
+                log_cloud_init_output(remoter=remoter)
+                scripts_errors_found = log_user_data_scripts_errors(remoter=remoter)
+                raise CloudInitPermanentError(
+                    f"Cloud-init finished with a permanent error on {instance.name}. See logs for details."
+                )
     else:
         result = remoter.sudo("cloud-init status --wait", ignore_status=True)
         status = result.stdout
@@ -77,3 +91,12 @@ def log_user_data_scripts_errors(remoter: RemoteCmdRunnerBase) -> bool:
         LOGGER.error("User data scripts were not executed at all.")
         errors_found = True
     return errors_found
+
+
+def log_cloud_init_output(remoter: RemoteCmdRunnerBase) -> None:
+    """Fetch and log the cloud-init script output log to surface errors (e.g. Docker install failures)."""
+    result = remoter.run(f"cat {CLOUD_INIT_OUTPUT_LOG}", ignore_status=True)
+    if result.ok:
+        LOGGER.error("cloud-init output log (%s):\n%s", CLOUD_INIT_OUTPUT_LOG, result.stdout)
+    else:
+        LOGGER.error("Could not read %s: %s", CLOUD_INIT_OUTPUT_LOG, result.stderr)

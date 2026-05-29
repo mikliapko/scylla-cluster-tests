@@ -427,8 +427,16 @@ def install_docker_service():
         # Install Docker
 
         for n in 1 2 3; do
-            if bash -c "$(curl -fsSL get.docker.com --retry 5 --retry-max-time 300 -o get-docker.sh)"; then
+            curl -fsSL get.docker.com --retry 5 --retry-max-time 300 -o get-docker.sh
+            curl_exit=$?
+            file_size=$(stat -c%s get-docker.sh 2>/dev/null || echo 0)
+            echo "Docker script download attempt $n: curl exit=$curl_exit, file size=$file_size bytes"
+            if [ "$curl_exit" -eq 0 ] && [ "$file_size" -gt 0 ]; then
                 break
+            fi
+            if [ $n -eq 3 ]; then
+                echo "ERROR: Failed to download Docker install script after 3 attempts" >&2
+                exit 1
             fi
             sleep $(backoff $n)
         done
@@ -436,6 +444,10 @@ def install_docker_service():
         for n in 1 2 3; do
             if sh get-docker.sh ; then
                 break
+            fi
+            if [ $n -eq 3 ]; then
+                echo "ERROR: Docker installation failed after 3 attempts" >&2
+                exit 1
             fi
             sleep $(backoff $n)
         done
