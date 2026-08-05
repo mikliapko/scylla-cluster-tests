@@ -973,6 +973,13 @@ class ManagerTestFunctionsMixIn(
         assert task_status == TaskStatus.DONE, f"Backup task ended in {task_status} instead of {TaskStatus.DONE}"
         return backup_task
 
+    def restart_backup_with_manager_task(self, backup_task, timeout=1500):
+        """Restart an existing backup task, wait for completion, assert success, and return the task."""
+        backup_task.start()
+        task_status = backup_task.wait_and_get_final_status(timeout=timeout)
+        assert task_status == TaskStatus.DONE, f"Backup task ended in {task_status} instead of {TaskStatus.DONE}"
+        return backup_task
+
     def restore_with_manager_task(
         self,
         mgr_cluster,
