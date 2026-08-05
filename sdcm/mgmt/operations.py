@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import boto3
 import yaml
+from google.api_core.exceptions import Forbidden
 from invoke import exceptions
 
 from sdcm.mgmt import get_scylla_manager_tool, TaskStatus
@@ -27,12 +28,20 @@ from sdcm.utils.azure_utils import AzureService
 from sdcm.utils.cluster_tools import flush_nodes, major_compaction_nodes, clear_snapshot_nodes
 from sdcm.utils.compaction_ops import CompactionOps
 from sdcm.utils.gce_region import GceRegion
-from sdcm.utils.gce_utils import create_gce_storage_bucket, get_gce_storage_client, gce_override_object_retention
+from sdcm.utils.gce_utils import (
+    create_event_based_hold_bucket,
+    create_object_retention_bucket,
+    gce_clear_event_based_hold,
+    gce_override_object_retention,
+    get_gce_storage_client,
+)
+from sdcm.utils.decorators import retrying, ScyllaManagerError
 from sdcm.utils.loader_utils import LoaderUtilsMixin
 from sdcm.utils.time_utils import ExecutionTimer
 
 if TYPE_CHECKING:
     from google.cloud.storage import Bucket
+    from sdcm.mgmt.cli import ManagerCluster
 
 
 class ClusterOperations(ClusterTester):
@@ -231,10 +240,8 @@ class BucketOperations(ClusterTester):
             raise ValueError(f"Unsupported cluster backend - {cluster_backend}, should be either aws or gce")
 
     @staticmethod
-    def create_worm_bucket(region: str, bucket_name: str) -> "Bucket":
-        bucket = create_gce_storage_bucket(name=bucket_name, region=region, object_lock_enabled=True)
-
-        # Grant the access to this bucket for sct-manager-backup service account
+    def _grant_backup_sa_access_to_bucket(bucket: "Bucket") -> None:
+        """Grant the sct-manager-backup service account objectAdmin access to the given bucket."""
         project_id = KeyStore().get_gcp_credentials()["project_id"]
         sa_email = f"{GceRegion.SCT_BACKUP_SERVICE_ACCOUNT}@{project_id}.iam.gserviceaccount.com"
 
@@ -242,17 +249,76 @@ class BucketOperations(ClusterTester):
         policy.bindings.append({"role": "roles/storage.objectAdmin", "members": {f"serviceAccount:{sa_email}"}})
         bucket.set_iam_policy(policy)
 
-        return bucket
-
     @staticmethod
-    def destroy_worm_bucket(bucket: "Bucket") -> None:
-        gce_override_object_retention(bucket_name=bucket.name, path="")
-
+    def delete_bucket_with_content(bucket: "Bucket") -> None:
+        """Delete all blobs in the bucket, then the bucket itself."""
         blobs = list(bucket.list_blobs())
         for blob in blobs:
             blob.delete()
 
         bucket.delete()
+
+    @staticmethod
+    def create_object_lock_bucket(region: str, bucket_name: str) -> "Bucket":
+        bucket = create_object_retention_bucket(name=bucket_name, region=region)
+        BucketOperations._grant_backup_sa_access_to_bucket(bucket)
+        return bucket
+
+    @staticmethod
+    def destroy_object_lock_bucket(bucket: "Bucket") -> None:
+        gce_override_object_retention(bucket_name=bucket.name, path="")
+        BucketOperations.delete_bucket_with_content(bucket)
+
+    @staticmethod
+    def create_event_hold_bucket(region: str, bucket_name: str, retention_seconds: int) -> "Bucket":
+        bucket = create_event_based_hold_bucket(name=bucket_name, region=region, retention_seconds=retention_seconds)
+        BucketOperations._grant_backup_sa_access_to_bucket(bucket)
+        return bucket
+
+    @staticmethod
+    def destroy_event_hold_bucket(bucket: "Bucket") -> None:
+        bucket.retention_period = None
+        bucket.patch()
+
+        gce_clear_event_based_hold(bucket_name=bucket.name, path="")
+
+        BucketOperations.delete_bucket_with_content(bucket)
+
+    @staticmethod
+    @retrying(n=10, sleep_time=3, allowed_exceptions=(ScyllaManagerError,), message="Location is not yet accessible")
+    def wait_for_location_accessibility_after_bucket_creation(mgr_cluster: "ManagerCluster", location: str) -> None:
+        """Wait for backup location to become available after bucket creation.
+
+        Polls `sctool backup --dry-run` that goes through the same SM agent-server code path as a real backup
+        instead of a blind sleep or `check-location` (which initializes rclone with fresh tokens from the
+        test node and can pass while the real backup, run through the agent server with stale tokens, fails).
+        """
+        mgr_cluster.create_backup_task(location_list=[location], dry_run=True)
+
+    def assert_blobs_event_based_hold(self, bucket: "Bucket", file_paths: set[str], expected: bool) -> None:
+        for file_path in file_paths:
+            self.log.debug("Validating event based hold for file_path: %s", file_path)
+            blob = bucket.blob(file_path)
+            blob.reload()
+            assert blob.event_based_hold == expected, (
+                f"File {file_path} is expected to have event_based_hold={expected}"
+            )
+
+    def assert_blobs_deletion_forbidden(self, bucket: "Bucket", file_paths: set[str]) -> None:
+        for file_path in file_paths:
+            self.log.debug("Validating deletion forbidden for file_path: %s", file_path)
+            blob = bucket.blob(file_path)
+            try:
+                blob.delete()
+                raise AssertionError(f"Deletion of protected file {file_path} unexpectedly succeeded")
+            except Forbidden:
+                pass
+
+    def assert_blobs_purged(self, bucket: "Bucket", file_paths: set[str]) -> None:
+        for file_path in file_paths:
+            self.log.debug("Validating purged status for file_path: %s", file_path)
+            blob = bucket.blob(file_path)
+            assert not blob.exists(), f"File {file_path} exists in the bucket"
 
 
 @dataclass
