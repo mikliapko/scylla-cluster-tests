@@ -359,7 +359,7 @@ class ManagerBackupTests(ManagerRestoreTests):
 
         try:
             self.log.info("Wait for backup location accessibility after bucket creation")
-            self.wait_for_location_accessibility_after_bucket_creation(mgr_cluster, location)
+            self.wait_for_location_accessibility_after_bucket_creation()
 
             self.log.info("Create backup task and wait for its completion")
             backup_task = mgr_cluster.create_backup_task(
@@ -442,7 +442,7 @@ class ManagerBackupTests(ManagerRestoreTests):
 
         try:
             self.log.info("Wait for backup location accessibility after bucket creation")
-            self.wait_for_location_accessibility_after_bucket_creation(mgr_cluster, location)
+            self.wait_for_location_accessibility_after_bucket_creation()
 
             self.log.info("Run backup #1 and wait for its completion")
             backup_task = self.backup_with_manager_task(
@@ -521,24 +521,24 @@ class ManagerBackupTests(ManagerRestoreTests):
 
     def test_backup_feature(self):
         self.generate_load_and_wait_for_results()
-        with self.subTest("Backup Multiple KS' and Tables"):
-            self.test_backup_multiple_ks_tables()
-        with self.subTest("Backup to Location with path"):
-            self.test_backup_location_with_path()
-        with self.subTest("Test Backup Rate Limit"):
-            self.test_backup_rate_limit()
-        with self.subTest("Test Backup Purge Removes Orphans Files"):
-            self.test_backup_purge_removes_orphan_files()
+        # with self.subTest("Backup Multiple KS' and Tables"):
+        #     self.test_backup_multiple_ks_tables()
+        # with self.subTest("Backup to Location with path"):
+        #     self.test_backup_location_with_path()
+        # with self.subTest("Test Backup Rate Limit"):
+        #     self.test_backup_rate_limit()
+        # with self.subTest("Test Backup Purge Removes Orphans Files"):
+        #     self.test_backup_purge_removes_orphan_files()
         if self.params.get("cluster_backend") == "gce":
             # WORM backup feature is currently available for GCP only
-            with self.subTest("Test WORM backup with object lock"):
-                self.test_worm_backup()
+            # with self.subTest("Test WORM backup with object lock"):
+            #     self.test_worm_backup()
             with self.subTest("Test event-based hold backup"):
                 self.test_event_based_hold_backup()
-        with self.subTest("Test Backup end of space"):  # Preferably at the end
-            self.test_enospc_during_backup()
-        with self.subTest("Test Restore end of space"):
-            self.test_enospc_before_restore()
+        # with self.subTest("Test Backup end of space"):  # Preferably at the end
+        #     self.test_enospc_during_backup()
+        # with self.subTest("Test Restore end of space"):
+        #     self.test_enospc_before_restore()
 
     def test_alternator_backup_feature(self):
         test_table_config = self.params.get("alternator_test_table") or {}

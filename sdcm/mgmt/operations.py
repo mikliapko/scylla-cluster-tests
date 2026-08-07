@@ -35,13 +35,11 @@ from sdcm.utils.gce_utils import (
     gce_override_object_retention,
     get_gce_storage_client,
 )
-from sdcm.utils.decorators import retrying, ScyllaManagerError
 from sdcm.utils.loader_utils import LoaderUtilsMixin
 from sdcm.utils.time_utils import ExecutionTimer
 
 if TYPE_CHECKING:
     from google.cloud.storage import Bucket
-    from sdcm.mgmt.cli import ManagerCluster
 
 
 class ClusterOperations(ClusterTester):
@@ -285,15 +283,16 @@ class BucketOperations(ClusterTester):
         BucketOperations.delete_bucket_with_content(bucket)
 
     @staticmethod
-    @retrying(n=10, sleep_time=3, allowed_exceptions=(ScyllaManagerError,), message="Location is not yet accessible")
-    def wait_for_location_accessibility_after_bucket_creation(mgr_cluster: "ManagerCluster", location: str) -> None:
+    def wait_for_location_accessibility_after_bucket_creation() -> None:
         """Wait for backup location to become available after bucket creation.
 
-        Polls `sctool backup --dry-run` that goes through the same SM agent-server code path as a real backup
-        instead of a blind sleep or `check-location` (which initializes rclone with fresh tokens from the
-        test node and can pass while the real backup, run through the agent server with stale tokens, fails).
+        We tried to use `scylla-manager-agent check-location` here instead of dummy sleep, but the approach
+        turned out to be not stable enough - check-location could proceed while the follow-up sctool backup
+        could fail immediately due to bucket access issue. The reason - check-location command issued in test
+        initializes rclone from scratch with fresh tokens, while backup runs through the SM agent server may
+        hold stale tokens. A fixed sleep is the most robust approach here.
         """
-        mgr_cluster.create_backup_task(location_list=[location], dry_run=True)
+        time.sleep(30)
 
     def assert_blobs_event_based_hold(self, bucket: "Bucket", file_paths: set[str], expected: bool) -> None:
         for file_path in file_paths:
