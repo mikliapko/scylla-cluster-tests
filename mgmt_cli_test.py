@@ -420,6 +420,8 @@ class ManagerBackupTests(ManagerRestoreTests):
         self.log.info("starting test_event_based_hold_backup")
         mgr_cluster = self.db_cluster.get_cluster_manager()
 
+        time.sleep(3600 * 2)
+
         second_keyspace = "keyspace2"
         self.log.info("Write initial rows to a second keyspace, to be dropped after backup #1")
         second_keyspace_stress_cmd = (
