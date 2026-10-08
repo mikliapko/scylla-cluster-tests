@@ -177,6 +177,58 @@ class VectorSearchThread(threading.Thread):
         self.test.log.info("Vector search operations stopped after %d operations", operation_number)
 
 
+class MixedLoadThread(threading.Thread):
+    """Background thread that runs C-S mixed load in consecutive duration-limited chunks until stopped.
+
+    Each chunk is a regular c-s run which finishes gracefully and prints its summary, so its results
+    can be verified. Killing a single long-running c-s would lose the summary and error counters.
+    """
+
+    def __init__(self, test: "XCloudScalingTest"):
+        super().__init__()
+        self.test = test
+        self._stop_event = threading.Event()
+        self.chunks_count = 0
+        self.failures: list[str] = []
+
+    def stop_and_join(self, timeout: int = 1800) -> None:
+        """Signal the thread to stop after the current chunk and wait for it to finish."""
+        if not self.is_alive():
+            return
+        self.test.log.info("Waiting for the current C-S mixed load chunk to complete...")
+        self._stop_event.set()
+        self.join(timeout=timeout)
+        if self.is_alive():
+            self.test.log.warning("C-S mixed load thread did not complete within timeout")
+
+    def _run_chunk(self) -> None:
+        stress_queue = []
+        self.test.assemble_and_run_all_stress_cmd(
+            stress_queue=stress_queue,
+            stress_cmd=self.test.params.get("stress_cmd_m"),
+            keyspace_num=1,
+        )
+        for queue in stress_queue:
+            if not self.test.verify_stress_thread(queue):
+                self.failures.append(f"chunk #{self.chunks_count}: c-s finished with errors or without results")
+                continue
+            for summary in self.test.get_stress_results(queue):
+                if (errors := int(summary.get("total errors", 0))) > 0:
+                    self.failures.append(f"chunk #{self.chunks_count}: c-s summary reports {errors} errors")
+
+    def run(self):
+        while not self._stop_event.is_set():
+            self.chunks_count += 1
+            self.test.log.info("C-S mixed load chunk #%d", self.chunks_count)
+            try:
+                self._run_chunk()
+            except Exception as exc:  # noqa: BLE001
+                self.test.log.error("C-S mixed load chunk #%d failed: %s", self.chunks_count, exc)
+                self.failures.append(f"chunk #{self.chunks_count}: {exc}")
+
+        self.test.log.info("C-S mixed load stopped after %d chunks", self.chunks_count)
+
+
 class ScyllaCloudTestBase(ClusterTester, LoaderUtilsMixin):
     """Base class for Scylla Cloud E2E tests, providing cloud API helpers."""
 
@@ -197,6 +249,11 @@ class ScyllaCloudTestBase(ClusterTester, LoaderUtilsMixin):
             account_id=self.account_id,
             cluster_name=self.db_cluster.name,
         )
+
+    def get_active_cluster_node_ids(self) -> set[int]:
+        """Return IDs of active DB nodes."""
+        nodes = self.cloud_api_client.get_cluster_nodes(account_id=self.account_id, cluster_id=self.cluster_id)
+        return {node["id"] for node in nodes if node["status"].upper() not in ("DELETED", "PENDING_DELETE")}
 
     def get_cluster_total_storage(self) -> float:
         """Return total storage (GB) of the cluster DB nodes as reported by Cloud API."""
@@ -327,3 +384,59 @@ class XCloudVectorSearchTest(ScyllaCloudTestBase):
             raise AssertionError(
                 f"Vector search validation failed {self.vector_thread.validation_failures} times during cluster scaling"
             )
+
+
+class XCloudScalingTest(ScyllaCloudTestBase):
+    """Verify that XCloud cluster auto-scales on storage utilization, background C-S mixed load reports no issues"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mixed_load_thread = None
+
+    def tearDown(self) -> None:
+        """Clean up background threads."""
+        if self.mixed_load_thread:
+            self.mixed_load_thread.stop_and_join()
+
+        super().tearDown()
+
+    def test_xcloud_cluster_scaling_under_load(self) -> None:
+        """Test cluster scaling triggered by storage utilization succeeds without disrupting C-S mixed load."""
+        node_ids_before_scaling = self.get_active_cluster_node_ids()
+
+        self.log.info("Populate the cluster over the scaling threshold")
+        self.run_prepare_write_cmd()
+
+        self.log.info("Start C-S mixed load against the populated data")
+        self.mixed_load_thread = MixedLoadThread(self)
+        self.mixed_load_thread.start()
+
+        self.log.info("Wait for cluster scaling to complete")
+        request_id = self.wait_for_resize_request()
+        self.wait_for_cluster_scale_out(request_id=request_id)
+
+        self.log.info("Cluster scaling completed, stop C-S mixed load")
+        self.mixed_load_thread.stop_and_join()
+
+        self.log.info("Verify C-S mixed load succeeded during cluster scaling")
+        assert not self.mixed_load_thread.failures, "C-S mixed load failed during cluster scaling:\n" + "\n".join(
+            self.mixed_load_thread.failures
+        )
+
+        self.log.info("Verify all cluster nodes were replaced after scaling")
+        node_ids_after_scaling = self.get_active_cluster_node_ids()
+        self.log.info("Cluster node IDs before scaling: %s, after: %s", node_ids_before_scaling, node_ids_after_scaling)
+        assert node_ids_before_scaling.isdisjoint(node_ids_after_scaling), (
+            f"Nodes were not replaced after scaling: node IDs before={sorted(node_ids_before_scaling)}, "
+            f"after={sorted(node_ids_after_scaling)}"
+        )
+
+        self.log.info("Verify all pre-populated data is readable after cluster scaling")
+        read_queue = []
+        self.assemble_and_run_all_stress_cmd(
+            stress_queue=read_queue,
+            stress_cmd=self.params.get("stress_read_cmd"),
+            keyspace_num=1,
+        )
+        for queue in read_queue:
+            assert self.verify_stress_thread(queue), "Pre-populated data verification failed after cluster scaling"
