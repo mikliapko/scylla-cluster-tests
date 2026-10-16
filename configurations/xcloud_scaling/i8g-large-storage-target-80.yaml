@@ -1,0 +1,14 @@
+xcloud_scaling_config: {
+    "InstanceFamilies": [],
+    "InstanceTypeIDs": [182],  # i8g.large
+    "Mode": "xcloud",
+    "Policies": {
+      "Storage": {
+        "Min": 0,
+        "TargetUtilization": 0.8
+      },
+      "VCPU": {
+        "Min": 0
+      }
+    }
+}
