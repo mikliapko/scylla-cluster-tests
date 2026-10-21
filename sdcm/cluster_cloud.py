@@ -25,6 +25,7 @@ import requests
 
 from sdcm import cluster, wait
 from sdcm.cloud.api_client import ScyllaCloudAPIClient, CloudProviderType
+from sdcm.cloud.cluster_utils import CloudClusterUtils
 from sdcm.exceptions import WaitForTimeoutError
 from sdcm.reporting.tooling_reporter import VectorStoreVersionReporter
 from sdcm.utils.aws_region import AwsRegion
@@ -771,6 +772,11 @@ class ScyllaCloudCluster(cluster.BaseScyllaCluster, cluster.BaseCluster):
         return self._api_client.get_cluster_details(
             account_id=self._account_id, cluster_id=self._cluster_id, enriched=True
         )["dc"]["id"]
+
+    @property
+    def cloud_utils(self) -> CloudClusterUtils:
+        """Cloud API helpers bound to this cluster, available once the cluster is created."""
+        return CloudClusterUtils(api_client=self._api_client, account_id=self._account_id, cluster_id=self._cluster_id)
 
     def _resolve_cluster_id(self) -> int:
         """Resolve cluster ID from test_id for cluster reuse"""
